@@ -282,6 +282,22 @@ function PlatformEntity:findBlockAt(x, y)
     end
 end
 
+function PlatformEntity:findEmbeddedBlockAt(x, y)
+    local _, _, width, height = self:getLocalRect()
+    local inset = 1
+    if width <= inset * 2 or height <= inset * 2 then
+        return self:findBlockAt(x, y)
+    end
+
+    for _, block in ipairs(self:getBlocks()) do
+        if not (block.is_barrier and self.ignore_barriers)
+            and self:collidesWithEvent(block, x, y, inset, inset, width - (inset * 2), height - (inset * 2))
+        then
+            return block
+        end
+    end
+end
+
 function PlatformEntity:findGroundAt(x, y, extra)
     extra = extra or 0
     local _, _, width, height = self:getLocalRect()
@@ -327,14 +343,15 @@ function PlatformEntity:updateOpenPosition()
         return
     end
 
-    if self:findBlockAt(self.owner.x, self.owner.y) then
+    if self:findEmbeddedBlockAt(self.owner.x, self.owner.y) then
         self.stuck_time = self.stuck_time + DTMULT
         if self.stuck_time >= 3 then
             self.stuck_time = 0
             self.owner.x = self.open_x
             self.owner.y = self.open_y
-            if self:findBlockAt(self.owner.x, self.owner.y) then
-                local wall = self:findBlockAt(self.owner.x, self.owner.y)
+            Object.uncache(self.owner)
+            if self:findEmbeddedBlockAt(self.owner.x, self.owner.y) then
+                local wall = self:findEmbeddedBlockAt(self.owner.x, self.owner.y)
                 if wall and wall.moving_platform then
                     self.vspeed = 0
                     self.ground = wall
@@ -371,11 +388,13 @@ function PlatformEntity:moveX(amount)
             else
                 self.owner.x = self.owner.x + ((self:getEventRight(block) + 2) - left)
             end
+            Object.uncache(self.owner)
             self.hspeed = 0
             return
         end
 
         self.owner.x = next_x
+        Object.uncache(self.owner)
         remaining = remaining - math.abs(step)
     end
 end
@@ -437,14 +456,15 @@ function PlatformEntity:moveY(amount)
         else
             local block = self.wallcollision and self:findBlockAt(self.owner.x, next_y) or nil
             if block then
-                local _, top = self:getWorldBoundsAt(self.owner.x, self.owner.y)
-                self.owner.y = self.owner.y + ((self:getEventBottom(block) + 2) - top)
+                self.owner.y = self.owner.y + 2
+                Object.uncache(self.owner)
                 self.vspeed = 0
                 return
             end
         end
 
         self.owner.y = next_y
+        Object.uncache(self.owner)
         remaining = remaining - math.abs(step)
     end
 end
