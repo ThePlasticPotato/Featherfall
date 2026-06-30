@@ -112,6 +112,9 @@ local function canActAsAirPlatform(state, actions, player, target, data)
 end
 
 local function autoSelectActionPlatform(state, actions, target, data)
+    if target and target.platform_action_override then
+        return
+    end
     if target and target.platform_action_target and state.turnIntoActionPlatform then
         return state:turnIntoActionPlatform(target, target.hang_xoffset or 0, target.hang_yoffset or 0, data)
     end

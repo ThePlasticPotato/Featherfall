@@ -97,7 +97,7 @@ function FollowerPlatformState:requestAction(target, data)
             return handled
         end
     end
-    if target.platform_action_target and self.turnIntoActionPlatform then
+    if target.platform_action_target and not target.platform_action_override and self.turnIntoActionPlatform then
         return self:turnIntoActionPlatform(target, target.hang_xoffset or 0, target.hang_yoffset or 0, data)
     end
     if self:isActionPlatformActive() then
@@ -296,8 +296,14 @@ function FollowerPlatformState:actionPlatformFallDown(splat_duration)
     end
 
     if self.ralsei_platform_object and self.ralsei_platform_object.parent then
-        self.ralsei_platform_object.platform_collision = true
+        self.ralsei_platform_object.platform_collision = false
+        self.ralsei_platform_object:remove()
+        self.ralsei_platform_object = nil
     end
+    if self.ralsei_scarf_object and self.ralsei_scarf_object.parent then
+        self.ralsei_scarf_object:remove()
+    end
+    self.ralsei_scarf_object = nil
     self.ralsei_platform_mode = 4
     self.action_platform_mode = 4
     self.ralsei_platform_timer = 0
@@ -458,7 +464,7 @@ end
 
 function FollowerPlatformState:updateRalseiFallDown(player)
     self.ralsei_fall_timer = (self.ralsei_fall_timer or 0) + DTMULT
-    if self.ralsei_platform_object and self.ralsei_platform_object.parent and self.ralsei_fall_timer > 15 then
+    if self.ralsei_platform_object and self.ralsei_platform_object.parent then
         self.ralsei_platform_object.platform_collision = false
         self.ralsei_platform_object:remove()
         self.ralsei_platform_object = nil
@@ -469,21 +475,6 @@ function FollowerPlatformState:updateRalseiFallDown(player)
         if self.follower.sprite then
             self.follower.sprite.visible = true
         end
-    end
-
-    if self.ralsei_fall_timer <= 15 then
-        if self.follower.sprite then
-            self.follower.sprite.visible = false
-        end
-        self:syncRalseiPlatformObject()
-        if self.entity then
-            self.entity.hspeed = 0
-            self.entity.vspeed = 0
-            self.entity.grounded = false
-            self.entity.ground = nil
-        end
-        self:setFollowerAnimation("jump_down")
-        return
     end
 
     if self.entity then

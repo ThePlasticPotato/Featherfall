@@ -88,4 +88,4 @@ Below are the notes I took on the Platforming mechanic in Deltarune, and how it 
 - `jumphover_min = 5`
 - `hover_movespeed = 6`
 - `heart_offset_max = 25`
--`jumphover_iframes_requirement = 10`
+- `jumphover_iframes_requirement = 10`

@@ -197,9 +197,6 @@ function actor:init()
             "flowery/jarona2",
             "flowery/jarona3",
             "flowery/jarona4",
-            "flowery/jarona3",
-            "flowery/jarona4",
-            "flowery/forthefans",
         },
         omega_voices = {
             "flowery/jarona1",

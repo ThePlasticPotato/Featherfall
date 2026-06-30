@@ -103,6 +103,10 @@ function Jarona:init(state, target, data)
         self:setAnimation("omega_poweringup")
     else
         self:setAnimation("jarona_ready")
+        local random = MathUtils.randomInt(1, 6)
+        if random == 4 then
+            Assets.playSound("flowery/forthefans", 0.5)
+        end
     end
 end
 
@@ -115,9 +119,6 @@ function Jarona:getVoiceList()
         "flowery/jarona2",
         "flowery/jarona3",
         "flowery/jarona4",
-        "flowery/jarona3",
-        "flowery/jarona4",
-        "flowery/forthefans",
     }
 end
 

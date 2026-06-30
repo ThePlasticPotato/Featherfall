@@ -22,7 +22,9 @@ local function performRudeBuster(member, follower_state, target, action_data)
         target.last_platform_damage = action_data.beam_damage or 2
         target.last_platform_damage_bonus = 0
         target.last_platform_explodes = action_data.beam_explodes ~= false
-        if target.onPlatformRudeBuster then
+        if target.platform_action_override and target.performFollowerAction then
+            return target:performFollowerAction(action_data.kind or "susie", follower_state, action_data)
+        elseif target.onPlatformRudeBuster then
             return target:onPlatformRudeBuster(follower_state, action_data)
         elseif target.performPlatformAction then
             return target:performPlatformAction(action_data.kind or "susie", follower_state, action_data)
@@ -99,6 +101,9 @@ function PartyMember:onPlatformFollowerAction(kind, follower_state, target, acti
         return handler(self, follower_state, target, action_data)
     end
 
+    if target and target.platform_action_override and target.performFollowerAction then
+        return target:performFollowerAction(kind, follower_state, action_data)
+    end
     if target and target.performPlatformAction then
         return target:performPlatformAction(kind, follower_state, action_data)
     end

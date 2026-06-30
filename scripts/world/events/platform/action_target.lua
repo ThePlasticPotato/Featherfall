@@ -300,12 +300,9 @@ function PlatformActionTarget:performFollowerAction(kind, follower_state, action
     kind = self:normalizeKind(kind)
     local override = self.platform_action_override
     if override then
-        local override_kind = self:normalizeKind(override.kind or override.action or override.target_kind or self.action_kind)
-        if override_kind == "any" or override_kind == "all" or kind == override_kind or self:normalizeKind(self.action_kind) == override_kind then
-            local callback = override.perform or override.onPerform or override.onAction
-            if callback then
-                return callback(self, follower_state, action_data, kind, override)
-            end
+        local callback = override.perform or override.onPerform or override.onAction
+        if callback then
+            return callback(self, follower_state, action_data, kind, override)
         end
     end
     if self.onPlatformAction then
