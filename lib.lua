@@ -62,6 +62,7 @@ Featherfall.assets = {
         wings = "world/statue/wings",
         light = "world/statue/light",
         fall_cue = "world/statue/fall_cue",
+        palette = "effects/platform/statue_palette",
     },
 }
 
@@ -647,6 +648,7 @@ function Featherfall:setupFloortexPlane(object, properties)
     object.y_ow_anchor = properties["y_ow_anchor"]
     object.y_plat_anchor = properties["y_plat_anchor"]
     object.floortex_plane_dirty = true
+    object.floortex_source_bounds_dirty = true
 end
 
 function Featherfall:getFloortexEvents()
@@ -819,6 +821,10 @@ function Featherfall:getFloortexProjectionLayers(object)
 end
 
 function Featherfall:getFloortexSourceBounds(object, layers)
+    if object.floortex_cached_source_bounds and not object.floortex_source_bounds_dirty then
+        return unpack(object.floortex_cached_source_bounds)
+    end
+
     local properties = object.properties or {}
     local source_x = properties["source_x"] or object.floortex_source_x
     local source_y = properties["source_y"] or object.floortex_source_y
@@ -826,6 +832,8 @@ function Featherfall:getFloortexSourceBounds(object, layers)
     local source_height = properties["source_height"] or object.floortex_source_height
 
     if source_x and source_y and source_width and source_height then
+        object.floortex_cached_source_bounds = {source_x, source_y, source_width, source_height}
+        object.floortex_source_bounds_dirty = false
         return source_x, source_y, source_width, source_height
     end
 
@@ -869,7 +877,28 @@ function Featherfall:getFloortexSourceBounds(object, layers)
         return object.x, object.y, object.width, object.height
     end
 
-    return source_x or min_x, source_y or min_y, source_width or (max_x - min_x), source_height or (max_y - min_y)
+    local resolved_x = source_x or min_x
+    local resolved_y = source_y or min_y
+    local resolved_width = source_width or (max_x - min_x)
+    local resolved_height = source_height or (max_y - min_y)
+    object.floortex_cached_source_bounds = {resolved_x, resolved_y, resolved_width, resolved_height}
+    object.floortex_source_bounds_dirty = false
+    return resolved_x, resolved_y, resolved_width, resolved_height
+end
+
+function Featherfall:setFloortexDirty(object)
+    if object then
+        object.floortex_plane_dirty = true
+        object.floortex_source_bounds_dirty = true
+        object.floortex_cached_source_bounds = nil
+        return
+    end
+
+    for _, event in ipairs(self:getFloortexEvents()) do
+        if event.platform_floortex then
+            self:setFloortexDirty(event)
+        end
+    end
 end
 
 function Featherfall:syncFloortexSourceVisibility(object)
@@ -925,6 +954,13 @@ end
 function Featherfall:drawFloortexProjection(object)
     if not self:shouldDrawFloortexProjection(object) then
         return
+    end
+
+    if object.platform_floortex_front then
+        local transition = self:getFloortexTransition()
+        if transition > 0.8 then
+            return
+        end
     end
 
     local map = Game.world and Game.world.map

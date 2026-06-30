@@ -4,7 +4,7 @@ function PaletteFX:init(palette_tex, palette_index, transformed, priority)
     super.init(self, priority or 0)
 
     self.shader = Assets.getShader("palette")
-	self.palette_tex = palette_tex and Assets.getTexture(palette_tex) or nil
+	self:setPaletteTexture(palette_tex)
 	self.palette_index = palette_index or 0
 end
 
@@ -13,7 +13,13 @@ function PaletteFX:setPaletteIndex(index)
 end
 
 function PaletteFX:setPaletteTexture(tex)
-	self.palette_tex = Assets.getTexture(tex) or nil
+    if not tex then
+        self.palette_tex = nil
+        return
+    end
+
+    local frames = Assets.getFrames(tex)
+	self.palette_tex = Assets.getTexture(tex) or (frames and frames[1]) or nil
 end
 
 function PaletteFX:isActive()

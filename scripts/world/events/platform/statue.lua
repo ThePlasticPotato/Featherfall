@@ -38,9 +38,12 @@ function PlatformStatue:init(data)
     self.image_index = 0
     self.image_xscale = self.properties["image_xscale"] or 2
     self.image_yscale = self.yscale_ow
+    self.pal_index = 0
     self.shine_alpha = 0
     self.shine_timer = 0
     self.statue_sprite = self.properties["sprite"] or Featherfall.assets.statue.top
+    self.palette_sprite = self.properties["palette"] or Featherfall.assets.statue.palette
+    self.palette_fx = PaletteFX and PaletteFX(self.palette_sprite, 0) or nil
     self.wings_timer = 0
     self.wings_timemax = 0
     self.base_layer = nil
@@ -139,6 +142,7 @@ function PlatformStatue:update()
         max_frame = #frames - 1
     end
     self.image_index = MathUtils.approach(self.image_index, max_frame, 0.25 * DTMULT)
+    self.pal_index = MathUtils.wrap(self.pal_index + (0.2 * DTMULT), 0, 6)
 
     local ys = Featherfall:getFloortexTransition()
     if ys > 0.5 and self.can_hit then
@@ -147,6 +151,37 @@ function PlatformStatue:update()
         self.shine_alpha = math.max(self.shine_alpha - (0.1 * DTMULT), 0)
     end
     self.shine_timer = self.shine_timer + DTMULT
+end
+
+function PlatformStatue:getPaletteIndex()
+    if not self.can_hit or not Featherfall:isEnabled(self) then
+        return 7
+    end
+    return self.pal_index
+end
+
+function PlatformStatue:drawPalettedTexture(texture, x, y, sx, sy, origin_x, origin_y, palette_index, alpha)
+    if not (self.palette_fx and self.palette_fx:isActive()) then
+        return false
+    end
+
+    self.palette_fx:setPaletteIndex(palette_index)
+
+    local source = Draw.pushCanvas(texture:getWidth(), texture:getHeight())
+    Draw.setColor(1, 1, 1, alpha or 1)
+    Draw.draw(texture, 0, 0)
+    Draw.popCanvas(true)
+
+    local mapped = Draw.pushCanvas(texture:getWidth(), texture:getHeight())
+    Draw.setColor(1, 1, 1, 1)
+    self.palette_fx:draw(source)
+    Draw.popCanvas(true)
+
+    Draw.setColor(1, 1, 1, 1)
+    Draw.drawCanvas(mapped, x, y, 0, sx or 1, sy or sx or 1, origin_x, origin_y)
+    Draw.unlockCanvas(source)
+    Draw.unlockCanvas(mapped)
+    return true
 end
 
 function PlatformStatue:beginEnterEffects()
@@ -231,7 +266,7 @@ function PlatformStatue:onPlatformAttackHit(hitbox)
     return true
 end
 
-function PlatformStatue:drawStatueSprite(path, frame, x, y, sx, sy, r, g, b, a)
+function PlatformStatue:drawStatueSprite(path, frame, x, y, sx, sy, r, g, b, a, palette_index)
     local texture = nil
     local frames = Assets.getFrames(path)
     if frames then
@@ -246,6 +281,10 @@ function PlatformStatue:drawStatueSprite(path, frame, x, y, sx, sy, r, g, b, a)
     local metadata = STATUE_SPRITE_METADATA[path]
     local origin_x = metadata and metadata.origin_x or (texture:getWidth() / 2)
     local origin_y = metadata and metadata.origin_y or texture:getHeight()
+
+    if palette_index ~= nil and self:drawPalettedTexture(texture, x, y, sx, sy, origin_x, origin_y, palette_index, a) then
+        return
+    end
 
     Draw.setColor(r or 1, g or 1, b or 1, a or 1)
     Draw.draw(texture, x, y, 0, sx or 1, sy or sx or 1, origin_x, origin_y)
@@ -273,7 +312,10 @@ function PlatformStatue:draw()
     end
 
     local frame = math.floor(self.image_index) + 1
-    if self.can_hit then
+    local palette_index = self:getPaletteIndex()
+    if self.palette_fx and self.palette_fx:isActive() then
+        self:drawStatueSprite(self.statue_sprite, frame, anchor_x, anchor_y, self.image_xscale, 2, nil, nil, nil, nil, palette_index)
+    elseif self.can_hit then
         self:drawStatueSprite(self.statue_sprite, frame, anchor_x, anchor_y, self.image_xscale, 2)
     else
         self:drawStatueSprite(self.statue_sprite, frame, anchor_x, anchor_y, self.image_xscale, 2, 0.6, 0.6, 0.6, 1)

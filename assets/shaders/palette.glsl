@@ -19,8 +19,12 @@ vec4 find_alt_color(vec4 in_color, vec2 corner)
 		dist = distance(left_color, in_color);
 
 		if (dist < TOLERANCE) {
-			test_pos = vec2(corner.x + pixel_size.x * floor(palette_id + 1.0), i);
-			return mix(Texel(palette_tex, vec2(test_pos.x - pixel_size.x, test_pos.y)), Texel(palette_tex, test_pos), fract(palette_id));
+			float max_index = floor((palette_uvs.z - corner.x) / pixel_size.x);
+			float base_index = clamp(floor(palette_id), 0.0, max_index);
+			float next_index = clamp(base_index + 1.0, 0.0, max_index);
+			vec4 base_color = Texel(palette_tex, vec2(corner.x + pixel_size.x * base_index, i));
+			vec4 next_color = Texel(palette_tex, vec2(corner.x + pixel_size.x * next_index, i));
+			return mix(base_color, next_color, fract(palette_id));
 		}
     }
     return in_color;
