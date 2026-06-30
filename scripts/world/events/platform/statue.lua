@@ -1,5 +1,7 @@
----@class PlatformStatue : Event
-local PlatformStatue, super = Class(Event)
+---@class PlatformStatue : PlatformAttackable
+local PlatformAttackable = libRequire("featherfall", "scripts.world.events.platform.attackable")
+local PaletteFX = libRequire("featherfall", "scripts.drawfx.palettefx")
+local PlatformStatue, super = Class(PlatformAttackable)
 
 local STATUE_SPRITE_METADATA = {
     ["world/statue/base"] = {origin_x = 20, origin_y = 40},
@@ -13,14 +15,10 @@ local STATUE_SPRITE_METADATA = {
 function PlatformStatue:init(data)
     super.init(self, data)
 
-    self.properties = data.properties or {}
     self.platform_statue = true
-    self.solid = self.properties["solid"] == true
+    self.properties = self.properties or (data and data.properties) or {}
     self.interact_buffer = 8 / 30
-    self.can_hit_default = self.properties["can_hit"] ~= false
-    self.can_hit = self.can_hit_default
     self.floating = self.properties["floating"] == true
-    self.hit = 0
     self.timer_max = self.properties["timer_max"] or Featherfall.constants.transition_timemax
     self.platform_snap_range = self.properties["platform_snap_range"] or 120
     self.platform_x = self.properties["platform_x"]
@@ -44,7 +42,7 @@ function PlatformStatue:init(data)
     self.shine_timer = 0
     self.statue_sprite = self.properties["sprite"] or Featherfall.assets.statue.top
     self.palette_sprite = self.properties["palette"] or Featherfall.assets.statue.palette
-    self.palette_fx = PaletteFX and PaletteFX(self.palette_sprite, 0) or nil
+    self.palette_fx = PaletteFX(self.palette_sprite, 0)
     self.wings_timer = 0
     self.wings_timemax = 0
     self.base_layer = nil
@@ -125,16 +123,7 @@ end
 function PlatformStatue:update()
     super.update(self)
     self:updatePlatformTransform()
-    local was_cooling_down = self.hit_cooldown > 0
-    self.hit_cooldown = MathUtils.approach(self.hit_cooldown, 0, DTMULT)
     self.wings_timer = MathUtils.approach(self.wings_timer, 0, DTMULT)
-    if self.hit_cooldown <= 0 and not self.can_hit and self.can_hit_default then
-        self.can_hit = true
-        self.hit = 0
-        if was_cooling_down then
-            Assets.playSound(Featherfall.sounds.statue_recover, nil, 1.25)
-        end
-    end
 
     local max_frame = 0
     local frames = Assets.getFrames(self.statue_sprite)
@@ -151,6 +140,14 @@ function PlatformStatue:update()
         self.shine_alpha = math.max(self.shine_alpha - (0.1 * DTMULT), 0)
     end
     self.shine_timer = self.shine_timer + DTMULT
+end
+
+function PlatformStatue:onPlatformAttackCooldownEnd()
+    local was_locked = not self.can_hit
+    super.onPlatformAttackCooldownEnd(self)
+    if was_locked and self.can_hit then
+        Assets.playSound(Featherfall.sounds.statue_recover, nil, 1.25)
+    end
 end
 
 function PlatformStatue:getPaletteIndex()
@@ -247,17 +244,20 @@ function PlatformStatue:onInteract(player, dir)
     return false
 end
 
-function PlatformStatue:onPlatformAttackHit(hitbox)
-    if not self.visible or not self.can_hit or self.floating or self.hit_cooldown > 0 then
+function PlatformStatue:canPlatformAttackHit(hitbox)
+    if not super.canPlatformAttackHit(self, hitbox) then
+        return false
+    end
+    if self.floating then
         return false
     end
     if not Featherfall:isEnabled(self) then
         return false
     end
-    if not (Game.world and Game.world.player and Game.world.player.state == Featherfall.state) then
-        return false
-    end
+    return true
+end
 
+function PlatformStatue:onPlatformAttack(hitbox)
     self:lockAllStatuesForHit()
     Featherfall:makeRipple(self.x + (self.width / 2), self.y + (self.height / 2), {
         life = 8,

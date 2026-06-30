@@ -251,6 +251,9 @@ function PlatformActions:isCharacterReady()
     if self.active or self.act_busy or fallen_in_pit then
         return false
     end
+    if self.state.isPlatformActionBlocked and self.state:isPlatformActionBlocked() then
+        return false
+    end
     if self.cooldown_timer > 0 then
         return false
     end

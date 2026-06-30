@@ -95,6 +95,7 @@ Featherfall.sounds = {
 function Featherfall:init()
     local aliases = {
         platform_statue = "platform/statue",
+        platform_attackable = "platform/attackable",
         platform_floor = "platform/floor",
         platform_block = "platform/block",
         platform_checkpoint = "platform/checkpoint",

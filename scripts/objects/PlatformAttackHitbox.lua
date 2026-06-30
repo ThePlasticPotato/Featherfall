@@ -172,7 +172,7 @@ function PlatformAttackHitbox:update()
     self.y = self.owner.y
     Object.uncache(self)
 
-    self:checkStatues()
+    self:checkAttackables()
 
     self.lifetime = self.lifetime - DTMULT
     if self.lifetime <= 0 then
@@ -180,14 +180,14 @@ function PlatformAttackHitbox:update()
     end
 end
 
-function PlatformAttackHitbox:checkStatues()
+function PlatformAttackHitbox:checkAttackables()
     if not Game.world then
         return
     end
 
     for _, obj in ipairs(Game.world.children) do
         local hit_callback = obj.onPlatformAttackHit
-        if obj.platform_statue and hit_callback and not self.hit_targets[obj] and self:collidesWith(obj) then
+        if obj.platform_attackable and hit_callback and not self.hit_targets[obj] and self:collidesWith(obj) then
             self.hit_targets[obj] = true
             hit_callback(obj, self)
         end

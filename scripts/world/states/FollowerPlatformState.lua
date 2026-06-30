@@ -64,6 +64,8 @@ function FollowerPlatformState:init(follower)
     self.ralsei_fall_splat_duration = 0
     self.ralsei_fall_phase = 0
     self.ralsei_splat_timer = 0
+    self.ralsei_splat_timer_max = 0
+    self.ralsei_splat_timer_max = 0
     self.actions = PlatformActions(self)
 end
 
@@ -210,6 +212,7 @@ function FollowerPlatformState:turnIntoActionPlatform(target, offset_x, offset_y
     self.ralsei_fall_splat_duration = 0
     self.ralsei_fall_phase = 0
     self.ralsei_splat_timer = 0
+    self.ralsei_splat_timer_max = 0
     self.offscreen_despawn_cooldown = 100
     self.follower.alpha = 1
     if self.follower.sprite then
@@ -261,6 +264,7 @@ function FollowerPlatformState:dropOffActionPlatform(reset_history)
     self.ralsei_fall_splat_duration = 0
     self.ralsei_fall_phase = 0
     self.ralsei_splat_timer = 0
+    self.ralsei_splat_timer_max = 0
     if self.ralsei_platform_object and self.ralsei_platform_object.parent then
         self.ralsei_platform_object:remove()
     end
@@ -516,10 +520,10 @@ function FollowerPlatformState:updateRalseiFallDown(player)
     if self.follower.sprite then
         self.follower.sprite.visible = true
     end
-    if splat_duration > 0 and self.actions then
+    if splat_duration > 0 then
         Assets.playSound("splat")
-        self.actions:setCooldown("SPLAT", splat_duration)
         self.ralsei_splat_timer = splat_duration
+        self.ralsei_splat_timer_max = splat_duration
     end
     self:setFollowerAnimation(splat_duration > 0 and "splat" or "idle")
     self:seedCaterpillarHistory(player)
@@ -561,10 +565,31 @@ function FollowerPlatformState:updateRalseiSplat(player)
     self:setFollowerAnimation("splat")
 
     if self.ralsei_splat_timer <= 0 then
+        self.ralsei_splat_timer_max = 0
         self:setFollowerAnimation("idle")
         self:seedCaterpillarHistory(player)
     end
     return true
+end
+
+function FollowerPlatformState:isPlatformActionBlocked()
+    return (self.ralsei_splat_timer or 0) > 0
+end
+
+function FollowerPlatformState:getPlatformMeters()
+    if (self.ralsei_splat_timer or 0) <= 0 then
+        return {}
+    end
+    local color = {0.5, 1, 0.5}
+    if Featherfall and Featherfall.getActionColorTable then
+        color = Featherfall:getActionColorTable(self:getFollowerKind(), nil, self) or color
+    end
+    return {{
+        text = "SPLAT",
+        value = self.ralsei_splat_timer,
+        max_value = math.max(self.ralsei_splat_timer_max or self.ralsei_splat_timer, 1),
+        color = color,
+    }}
 end
 
 function FollowerPlatformState:getFollowDistance(target)
@@ -1341,6 +1366,7 @@ function FollowerPlatformState:onExit(next_state)
     self.runstop_anim_timer = 0
     self.turn_facing = nil
     self.ralsei_splat_timer = 0
+    self.ralsei_splat_timer_max = 0
     self.entity = nil
 
     local restore = self.restore_state or {}

@@ -327,57 +327,57 @@ function PlatformActionUI:drawSoul(state)
     self:drawHeartSprite(self.soul_x, self.soul_y, 1)
 end
 
-function PlatformActionUI:drawCooldownIndicator(character, ff_state)
+function PlatformActionUI:getActionCooldownMeter(character, ff_state)
     local actions = ff_state.actions
     if not (actions and actions.cooldown_timer and actions.cooldown_timer > 0) then
         return
     end
 
     local max_timer = math.max(actions.cooldown_max or actions.cooldown_timer, 1)
-    local progress = MathUtils.clamp(actions.cooldown_timer / max_timer, 0, 1)
     local kind = ff_state.getActionKind and ff_state:getActionKind() or (ff_state.getFollowerKind and ff_state:getFollowerKind())
-    local r, g, b = self:getColor({action_kind = kind})
-    local x = character.x
-    local y = character.y - character.height - 40
-    local width = 60
-    local bar_height = 12
-    local border = 2
-    local fill_inset = 4
-    local fill_height = 4
-    local text = actions.cooldown_text or "RECHARGE"
-    local font = Assets.getFont("main", 16)
-    local old_font = love.graphics.getFont()
-    if font then
-        love.graphics.setFont(font)
+    return {
+        text = actions.cooldown_text or "RECHARGE",
+        value = actions.cooldown_timer,
+        max_value = max_timer,
+        color = {self:getColor({action_kind = kind})},
+    }
+end
+
+function PlatformActionUI:getMeters(character, ff_state)
+    local meters = {}
+    local cooldown_meter = self:getActionCooldownMeter(character, ff_state)
+    if cooldown_meter then
+        table.insert(meters, cooldown_meter)
+    end
+    if ff_state.getPlatformMeters then
+        for _, meter in ipairs(ff_state:getPlatformMeters() or {}) do
+            table.insert(meters, meter)
+        end
+    end
+    return meters
+end
+
+function PlatformActionUI:drawMeters(character, ff_state)
+    if not PlatformMeter then
+        return
     end
 
-    local font_height = font and font:getHeight() or 0
-    Draw.setColor(r, g, b, 1)
-    love.graphics.printf(text, x - width, y - font_height, width * 2, "center")
-
-    Draw.setColor(r, g, b, 1)
-    love.graphics.rectangle("fill", x - (width / 2), y, width, bar_height)
-    Draw.setColor(0, 0, 0, 1)
-    love.graphics.rectangle("fill", x - (width / 2) + border, y + border, width - (border * 2), bar_height - (border * 2))
-    Draw.setColor(r, g, b, 1)
-    love.graphics.rectangle("fill", x - (width / 2) + fill_inset, y + fill_inset, (width - (fill_inset * 2)) * progress, fill_height)
-
-    if old_font then
-        love.graphics.setFont(old_font)
+    for index, meter_data in ipairs(self:getMeters(character, ff_state)) do
+        meter_data.stack_index = index - 1
+        PlatformMeter(character, meter_data):draw()
     end
-    Draw.setColor(1, 1, 1, 1)
 end
 
 function PlatformActionUI:drawFollowerCooldowns()
     local player = Game.world and Game.world.player
     local player_state = player and player.platform_state
     if player_state and player.isPlatforming and player:isPlatforming() then
-        self:drawCooldownIndicator(player, player_state)
+        self:drawMeters(player, player_state)
     end
     for _, follower in ipairs(Game.world and Game.world.followers or {}) do
         local ff_state = follower.platform_state
         if ff_state and follower.isPlatforming and follower:isPlatforming() then
-            self:drawCooldownIndicator(follower, ff_state)
+            self:drawMeters(follower, ff_state)
         end
     end
 end
