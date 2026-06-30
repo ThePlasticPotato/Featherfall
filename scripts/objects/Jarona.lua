@@ -21,12 +21,12 @@ local FLOWER_SPRITES = {
 }
 
 local FLOWER_COLORS = {
-    {1, 1, 0},
-    {1, 0, 1},
-    {64 / 255, 160 / 255, 1},
     {0, 1, 1},
-    {0, 1, 0},
+    {1, 0, 1},
     {1, 0, 0},
+    {1, 1, 0},
+    {0, 1, 0},
+    {0, 0, 1},
 }
 
 local function colorToInt(color)
@@ -387,7 +387,7 @@ end
 function Jarona:updateOmegaCharge()
     self:updateCharacterPosition(self.start_x, self.start_y - 52)
     self:setAnimation("omega_powerup")
-    
+
     if (self.timer >= self.omega_charge_time/2) and not self.played_last_jarona then
         self.played_last_jarona = true
         Assets.playSound("flowery/last_jarona")

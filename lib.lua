@@ -957,8 +957,8 @@ function Featherfall:drawFloortexProjection(object)
     end
 
     if object.platform_floortex_front then
-        local transition = self:getFloortexTransition()
-        if transition > 0.8 then
+        local _, yscale = self:getFloortexTransition()
+        if yscale > 0.8 then
             return
         end
     end
@@ -1523,7 +1523,11 @@ function Featherfall:postUpdate()
     self:updateActionUI()
 
     if self.transition_timer <= 0 then
+        local was_holding_projection = self.transition_projection_hold > 0
         self.transition_projection_hold = MathUtils.approach(self.transition_projection_hold, 0, DTMULT)
+        if was_holding_projection and self.transition_projection_hold <= 0 and not self:isPlatformModeActive() then
+            self:restoreAllFloortexSourceVisibility()
+        end
         return
     end
 
