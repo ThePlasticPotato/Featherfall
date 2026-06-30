@@ -976,25 +976,15 @@ function FollowerPlatformState:getCaterpillarTarget(player)
 end
 
 function FollowerPlatformState:applyGroundDifference()
-    local ground = self.entity and self.entity.ground
-    if not ground then
+    local dx = self.entity and self.entity.last_platform_dx or 0
+    local dy = self.entity and self.entity.last_platform_dy or 0
+    if dx == 0 and dy == 0 then
         return
     end
 
-    local dif_x, dif_y = ground.dif_x or 0, ground.dif_y or 0
-    if dif_x == 0 and dif_y == 0 then
-        return
-    end
-    if self.entity:findBlockAt(self.follower.x + dif_x, self.follower.y + dif_y) then
-        return
-    end
-
-    self.follower.x = self.follower.x + (dif_x * DTMULT)
-    self.follower.y = self.follower.y + (dif_y * DTMULT)
-    Object.uncache(self.follower)
     for index = 0, self.position_history_length do
-        self.caterpillar_history_x[index] = (self.caterpillar_history_x[index] or self.follower.x) + (dif_x * DTMULT)
-        self.caterpillar_history_y[index] = (self.caterpillar_history_y[index] or self.follower.y) + (dif_y * DTMULT)
+        self.caterpillar_history_x[index] = (self.caterpillar_history_x[index] or self.follower.x) + dx
+        self.caterpillar_history_y[index] = (self.caterpillar_history_y[index] or self.follower.y) + dy
     end
 end
 
@@ -1420,17 +1410,7 @@ function FollowerPlatformState:onExit(next_state)
 end
 
 function FollowerPlatformState:drawDebug()
-    if self.entity then
-        local x, y, width, height = self.entity:getLocalRect()
-        love.graphics.setColor(0.4, 1, 0.45, 0.6)
-        love.graphics.rectangle("line", x, y, width, height)
-        love.graphics.setColor(1, 1, 1, 1)
-        return
-    end
-
-    love.graphics.setColor(0.4, 1, 0.45, 0.6)
-    love.graphics.rectangle("line", 0, 0, self.follower.width, self.follower.height)
-    love.graphics.setColor(1, 1, 1, 1)
+    self:drawPlatformDebug(0.4, 1, 0.45)
 end
 
 return FollowerPlatformState

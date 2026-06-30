@@ -1216,6 +1216,7 @@ function PlayerPlatformState:onUpdate()
 
     local key_left = Input.down("left")
     local key_right = Input.down("right")
+    local key_down = Input.down("down")
     local press_left = Input.pressed("left")
     local press_right = Input.pressed("right")
     if key_left and key_right then
@@ -1252,15 +1253,32 @@ function PlayerPlatformState:onUpdate()
             self:spawnDust(-1)
         end
     end
+    if Input.down("cancel") and grounded_attack then
+        if self.entity then
+            self.entity.jumpbuffer = 4
+        end
+        local attack_image = math.floor(self.attack_frame or 0)
+        if attack_image >= 5 and self.attack_hitbox == 1 then
+            self.attacking = false
+        elseif attack_image >= 9 and self.attack_hitbox == 2 then
+            self.attacking = false
+        end
+    end
     self.entity:updatePlayer({
         move = move,
         key_left = key_left,
         key_right = key_right,
         dont_accel = grounded_attack,
         force_decel = grounded_attack,
+        block_jump = self.attacking,
         press_jump = Input.pressed("cancel"),
         key_jump = Input.down("cancel"),
     })
+    if self.entity.jump_ceiling_blocked then
+        Assets.playSound(Featherfall.sounds.landing)
+        self:spawnDust(-1, Featherfall.assets.effects.landingdust_new)
+        self:spawnDust(1, Featherfall.assets.effects.landingdust_new)
+    end
     self:playEntityFeedbackSounds()
     self:syncFromEntity()
     self:updateMovementAnimationFlags(key_left, key_right, move)
@@ -1283,6 +1301,8 @@ function PlayerPlatformState:onUpdate()
         self:setPlayerAnimation("halt")
     elseif math.abs(self.hspeed) > 0.1 then
         self:setPlayerAnimation("run")
+    elseif key_down and self:getPlatformAnimation("crouch") then
+        self:setPlayerAnimation("crouch")
     else
         self:setPlayerAnimation("idle")
     end
@@ -1347,17 +1367,7 @@ function PlayerPlatformState:onExit(next_state)
 end
 
 function PlayerPlatformState:drawDebug()
-    if self.entity then
-        local x, y, width, height = self.entity:getLocalRect()
-        love.graphics.setColor(0.2, 0.75, 1, 0.6)
-        love.graphics.rectangle("line", x, y, width, height)
-        love.graphics.setColor(1, 1, 1, 1)
-        return
-    end
-
-    love.graphics.setColor(0.2, 0.75, 1, 0.6)
-    love.graphics.rectangle("line", 0, 0, self.player.width, self.player.height)
-    love.graphics.setColor(1, 1, 1, 1)
+    self:drawPlatformDebug(0.2, 0.75, 1)
 end
 
 return PlayerPlatformState

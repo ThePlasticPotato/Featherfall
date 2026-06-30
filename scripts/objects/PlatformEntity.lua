@@ -13,8 +13,14 @@ function PlatformEntity:init(owner, constants)
     self.ground = nil
     self.landspd = 0
     self.wallhitspd = 0
+    self.floorY = 0
+    self.grounded_lastX = owner.x
     self.ignore_barriers = false
     self.wallcollision = true
+    self.can_ride_entities = false
+    self.climbing = false
+    self.last_platform_dx = 0
+    self.last_platform_dy = 0
 
     self.hitbox = {0, 0, 20, 38}
     self.open_x = owner.x
@@ -27,6 +33,7 @@ function PlatformEntity:init(owner, constants)
     self.jump_time = 0
     self.jumping = 0
     self.launched_jump = false
+    self.jump_ceiling_blocked = false
 end
 
 function PlatformEntity:reset(settings)
@@ -39,8 +46,14 @@ function PlatformEntity:reset(settings)
     self.ground = nil
     self.landspd = 0
     self.wallhitspd = 0
+    self.floorY = 0
+    self.grounded_lastX = self.owner.x
     self.ignore_barriers = settings.ignore_barriers or false
     self.wallcollision = settings.wallcollision ~= false
+    self.can_ride_entities = settings.can_ride_entities or false
+    self.climbing = settings.climbing or false
+    self.last_platform_dx = 0
+    self.last_platform_dy = 0
 
     self.open_x = self.owner.x
     self.open_y = self.owner.y
@@ -52,6 +65,7 @@ function PlatformEntity:reset(settings)
     self.jump_time = 0
     self.jumping = 0
     self.launched_jump = false
+    self.jump_ceiling_blocked = false
 end
 
 function PlatformEntity:setHitbox(x, y, width, height)
@@ -162,6 +176,13 @@ function PlatformEntity:isFloorEvent(event)
     )
 end
 
+function PlatformEntity:isRideableEvent(event)
+    return event
+        and event.platform_collision ~= false
+        and event.rideable
+        and event.is_entity
+end
+
 function PlatformEntity:getBlocks()
     local blocks = {}
     for _, event in ipairs(self:getPlatformEvents()) do
@@ -182,6 +203,73 @@ function PlatformEntity:getFloors()
     return floors
 end
 
+function PlatformEntity:getRideables()
+    local rideables = {}
+    for _, event in ipairs(self:getPlatformEvents()) do
+        if self:isRideableEvent(event) then
+            table.insert(rideables, event)
+        end
+    end
+    return rideables
+end
+
+function PlatformEntity:getGroundTopAt(ground, x, y)
+    if not ground then
+        return
+    end
+
+    if ground.is_slope or ground.platform_slope then
+        local left, _, _, _, right = self:getWorldBoundsAt(x or self.owner.x, y or self.owner.y)
+        local x1 = ground.x1 or ground.slope_x1 or ground.x
+        local y1 = ground.y1 or ground.slope_y1 or ground.y
+        local x2 = ground.x2 or ground.slope_x2 or (ground.x + ground.width)
+        local y2 = ground.y2 or ground.slope_y2 or ground.y
+        if x1 == x2 then
+            return math.min(y1, y2)
+        end
+
+        local floor_x = right
+        if (ground.image_xscale or ground.scale_x or 1) < 0 then
+            floor_x = left
+        end
+        if ground.slope_anchor == "left" then
+            floor_x = left
+        elseif ground.slope_anchor == "center" then
+            floor_x = (left + right) / 2
+        elseif ground.slope_anchor == "right" then
+            floor_x = right
+        end
+
+        local min_x, max_x = math.min(x1, x2), math.max(x1, x2)
+        floor_x = MathUtils.clamp(floor_x, min_x, max_x)
+
+        if (ground.plattype or ground.slope_type or 0) == 1 then
+            local span = math.max(math.abs(x1 - x2), 0.001)
+            local height = y2 - y1
+            return ground.y - (math.sin((math.pi * (floor_x - x1)) / span) * math.abs(height))
+        end
+
+        local t = (floor_x - x1) / (x2 - x1)
+        local floor_y = y1 + ((y2 - y1) * t)
+        return MathUtils.clamp(floor_y, math.min(y1, y2), math.max(y1, y2))
+    end
+
+    if ground.is_entity and ground.bbox_top_r then
+        return ground.y - ground.bbox_top_r
+    end
+    return self:getEventTop(ground)
+end
+
+function PlatformEntity:isAboveGround(ground, x, y, extra)
+    extra = extra or 0
+    local _, _, _, _, _, bottom = self:getWorldBoundsAt(x, y)
+    local ground_y = self:getGroundTopAt(ground, x, y)
+    if not ground_y then
+        return false
+    end
+    return bottom <= ground_y + extra and bottom + extra >= ground_y
+end
+
 function PlatformEntity:overlapsRect(event, x, y)
     return self:collidesWithEvent(event, x, y)
 end
@@ -197,14 +285,12 @@ end
 function PlatformEntity:findGroundAt(x, y, extra)
     extra = extra or 0
     local _, _, width, height = self:getLocalRect()
-    local _, _, _, _, _, bottom = self:getWorldBoundsAt(x, y)
-
     local best = nil
     local best_y = math.huge
     for _, floor in ipairs(self:getFloors()) do
-        local floor_top = self:getEventTop(floor)
-        if self:collidesWithEvent(floor, x, y, 0, height - 1, width, extra + 2) then
-            if bottom <= floor_top + extra and bottom + extra >= floor_top and floor_top < best_y then
+        local floor_top = self:getGroundTopAt(floor, x, y)
+        if floor_top and self:collidesWithEvent(floor, x, y, 0, height - 1, width, extra + 2) then
+            if self:isAboveGround(floor, x, y, extra) and floor_top < best_y then
                 best = floor
                 best_y = floor_top
             end
@@ -212,11 +298,23 @@ function PlatformEntity:findGroundAt(x, y, extra)
     end
 
     for _, block in ipairs(self:getBlocks()) do
-        local block_top = self:getEventTop(block)
-        if not (block.is_barrier and self.ignore_barriers) and self:collidesWithEvent(block, x, y, 0, height - 1, width, extra + 2) then
-            if bottom <= block_top + extra and bottom + extra >= block_top and block_top < best_y then
+        local block_top = self:getGroundTopAt(block, x, y)
+        if block_top and not (block.is_barrier and self.ignore_barriers) and self:collidesWithEvent(block, x, y, 0, height - 1, width, extra + 2) then
+            if self:isAboveGround(block, x, y, extra) and block_top < best_y then
                 best = block
                 best_y = block_top
+            end
+        end
+    end
+
+    if self.can_ride_entities then
+        for _, rideable in ipairs(self:getRideables()) do
+            local ride_top = self:getGroundTopAt(rideable, x, y)
+            if ride_top and self:collidesWithEvent(rideable, x, y, 0, height - 1, width, extra + 2) then
+                if self:isAboveGround(rideable, x, y, extra) and ride_top < best_y then
+                    best = rideable
+                    best_y = ride_top
+                end
             end
         end
     end
@@ -236,7 +334,14 @@ function PlatformEntity:updateOpenPosition()
             self.owner.x = self.open_x
             self.owner.y = self.open_y
             if self:findBlockAt(self.owner.x, self.owner.y) then
-                self.vspeed = 0
+                local wall = self:findBlockAt(self.owner.x, self.owner.y)
+                if wall and wall.moving_platform then
+                    self.vspeed = 0
+                    self.ground = wall
+                    self:snapToGround(wall)
+                else
+                    self.vspeed = 0
+                end
             end
         end
     else
@@ -278,10 +383,35 @@ end
 function PlatformEntity:landOn(ground)
     self.grounded = true
     self.ground = ground
+    self.grounded_lastX = self.owner.x
     self.landspd = self.vspeed
     self.vspeed = 0
+    self:snapToGround(ground)
+end
+
+function PlatformEntity:snapToGround(ground)
+    ground = ground or self.ground
+    if not ground then
+        return
+    end
+
     local _, _, _, _, _, bottom = self:getWorldBoundsAt(self.owner.x, self.owner.y)
-    self.owner.y = self.owner.y + ((self:getEventTop(ground) - 1) - bottom)
+    local ground_y = self:getGroundTopAt(ground, self.owner.x, self.owner.y)
+    if not ground_y then
+        return
+    end
+
+    self.floorY = ground_y
+    local snap_offset = (ground.is_slope or ground.platform_slope) and 2 or 1
+    if ground.quicksand and ground.quicksand ~= 0 then
+        snap_offset = 1
+    end
+    local new_y = self.owner.y + ((ground_y - snap_offset) - bottom)
+
+    if not self:findBlockAt(self.owner.x, new_y) then
+        self.owner.y = new_y
+        Object.uncache(self.owner)
+    end
 end
 
 function PlatformEntity:moveY(amount)
@@ -299,7 +429,8 @@ function PlatformEntity:moveY(amount)
         if step > 0 then
             local ground = self:findGroundAt(self.owner.x, next_y, math.abs(step))
             local _, _, _, _, _, old_bottom = self:getWorldBoundsAt(self.owner.x, old_y)
-            if ground and old_bottom <= self:getEventTop(ground) + math.abs(step) then
+            local ground_top = ground and self:getGroundTopAt(ground, self.owner.x, next_y)
+            if ground and ground_top and old_bottom <= ground_top + math.abs(step) then
                 self:landOn(ground)
                 return
             end
@@ -332,6 +463,43 @@ function PlatformEntity:applyGroundEffects()
         if not self:findBlockAt(self.owner.x + change, self.owner.y) then
             self.owner.x = self.owner.x + change
         end
+    end
+end
+
+function PlatformEntity:applyMovingGround()
+    self.last_platform_dx = 0
+    self.last_platform_dy = 0
+    if not (self.grounded and self.ground and (self.ground.moving_platform or self.ground.rideable)) then
+        return
+    end
+
+    local dx = self.ground.dif_x or 0
+    local dy = self.ground.dif_y or 0
+    if dx == 0 and dy == 0 then
+        return
+    end
+
+    local target_x = self.owner.x + dx
+    local target_y = self.owner.y + dy
+    if self:findBlockAt(target_x, target_y) then
+        if not self:findBlockAt(target_x, self.owner.y) then
+            self.owner.x = target_x
+            self.last_platform_dx = dx
+        end
+        if not self:findBlockAt(self.owner.x, target_y) then
+            self.owner.y = target_y
+            self.last_platform_dy = dy
+        end
+    else
+        self.owner.x = target_x
+        self.owner.y = target_y
+        self.last_platform_dx = dx
+        self.last_platform_dy = dy
+    end
+    Object.uncache(self.owner)
+
+    if self.grounded then
+        self:snapToGround(self.ground)
     end
 end
 
@@ -387,17 +555,18 @@ function PlatformEntity:updateHorizontalInput(input)
 
     if ((not key_left and not key_right) or (key_left and key_right) or force_decel) then
         self.hspeed = self.hspeed * decel_factor
-        if math.abs(self.hspeed) < 0.01 then
-            self.hspeed = 0
-        end
     end
 end
 
-function PlatformEntity:updateJumpInput(press_jump, key_jump)
+function PlatformEntity:updateJumpInput(press_jump, key_jump, options)
+    options = options or {}
     local constants = self.constants
     self.launched_jump = false
+    self.jump_ceiling_blocked = false
+    local can_jump = options.can_jump ~= false
+    local block_jump = options.block_jump or false
 
-    if press_jump then
+    if press_jump and can_jump then
         self.jumpbuffer = constants.jumpbuffer or 4
     else
         self.jumpbuffer = math.max(self.jumpbuffer - DTMULT, 0)
@@ -411,20 +580,30 @@ function PlatformEntity:updateJumpInput(press_jump, key_jump)
         self.jump_coyote_time = math.max(self.jump_coyote_time - DTMULT, 0)
     end
 
-    if (self.jumpbuffer > 0 or self.jumpsquat > 0) and (self.grounded or (self.jump_coyote_time > 0 and self.vspeed > -1)) then
-        self.jumpsquat = math.max(self.jumpsquat + DTMULT, 1)
+    if (self.jumpbuffer > 0 or self.jumpsquat > 0) and (self.grounded or (self.jump_coyote_time > 0 and self.vspeed > -1)) and not block_jump then
+        local squat_inc = DTMULT
+        local ceiling_blocked = self.wallcollision and self:findBlockAt(self.owner.x, self.owner.y - 8)
+        if ceiling_blocked then
+            squat_inc = 0.5 * DTMULT
+            if self.jumpsquat == 0 then
+                self.jump_ceiling_blocked = true
+            end
+        end
+        self.jumpsquat = math.max(self.jumpsquat + squat_inc, 1)
         self.jumpbuffer = 0
 
         if self.jumpsquat > (constants.jumpsquat or 2) then
             self.jumpsquat = 0
             self.jump_coyote_time = 0
-            self.grounded = false
-            self.ground = nil
-            self.vspeed = -(constants.jumpheight or 20)
-            self.owner.y = self.owner.y - 1
-            self.jumping = 1
-            self.jump_time = 0
-            self.launched_jump = true
+            if not ceiling_blocked then
+                self.grounded = false
+                self.ground = nil
+                self.vspeed = -(constants.jumpheight or 20)
+                self.owner.y = self.owner.y - 1
+                self.jumping = 1
+                self.jump_time = 0
+                self.launched_jump = true
+            end
         end
     else
         self.jumpsquat = 0
@@ -446,12 +625,13 @@ function PlatformEntity:updatePlayer(input)
 
     self:updateOpenPosition()
     self:updateHorizontalInput(input)
-    self:updateJumpInput(input.press_jump or false, input.key_jump or false)
+    self:updateJumpInput(input.press_jump or false, input.key_jump or false, input)
     self:updatePhysics()
 end
 
 function PlatformEntity:updatePhysics()
     local constants = self.constants
+    local previous_ground = self.ground
 
     self.grounded_prev = self.grounded
     self.grounded = false
@@ -460,13 +640,20 @@ function PlatformEntity:updatePhysics()
     self.wallhitspd = 0
 
     self:moveX(self.hspeed * DTMULT)
-    self:moveY(self.vspeed * DTMULT)
 
+    local ground_extra = MathUtils.clamp((previous_ground and (previous_ground.dif_y or 0) or 0) * 4, 4, 18)
+    if self.vspeed > 0 then
+        ground_extra = math.ceil(math.abs(self.vspeed) + 4)
+    end
     if not self.grounded then
-        local ground = self:findGroundAt(self.owner.x, self.owner.y, 4)
-        if ground and self.vspeed >= 0 then
+        local ground = self:findGroundAt(self.owner.x, self.owner.y, ground_extra)
+        if ground and self.vspeed >= 0 and not self.climbing then
             self:landOn(ground)
         end
+    end
+
+    if not self.grounded then
+        self:moveY(self.vspeed * DTMULT)
     end
 
     self:applyGroundEffects()
@@ -474,6 +661,22 @@ function PlatformEntity:updatePhysics()
     if not self.grounded then
         self.vspeed = math.min(self.vspeed + (constants.gravity or 0.5) * DTMULT, constants.fall_speed or 15)
     end
+
+    self:applyMovingGround()
+end
+
+function PlatformEntity:getDebugLines()
+    local ground = self.ground
+    local ground_name = "none"
+    if ground then
+        ground_name = ground.name or ground.id or ground.objectname or tostring(ground)
+    end
+    return {
+        string.format("spd %.2f %.2f", self.hspeed or 0, self.vspeed or 0),
+        string.format("gnd %s %s", self.grounded and "1" or "0", tostring(ground_name)),
+        string.format("land %.2f wall %.2f", self.landspd or 0, self.wallhitspd or 0),
+        string.format("plat %.2f %.2f", self.last_platform_dx or 0, self.last_platform_dy or 0),
+    }
 end
 
 return PlatformEntity

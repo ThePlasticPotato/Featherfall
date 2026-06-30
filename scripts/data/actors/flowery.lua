@@ -146,6 +146,7 @@ function actor:init()
         hitbox = {0, 0, 20, 38},
         animations = {
             idle = {sprite = "party/flowery/idle", speed = 1 / (30 * 0.25), loop = true, invert_flip = true, offset = fixedOffset(-3, -21)},
+            crouch = {sprite = "party/flowery/platform/crouch", offset = platformOffset(14, 27)},
             run = {sprite = "party/flowery/platform/run", speed = 1 / (30 * 0.35), loop = true, offset = platformOffset(8, -17)},
             jump_up = {sprite = "party/flowery/platform/jump_down", offset = platformOffset(4, -1)},
             jump_down = {sprite = "party/flowery/platform/jump_down", offset = platformOffset(4, -1)},

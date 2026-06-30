@@ -246,6 +246,24 @@ function PlatformActorState:drawPlatformDebug(r, g, b)
         local x, y, width, height = self.entity:getLocalRect()
         love.graphics.setColor(r, g, b, 0.6)
         love.graphics.rectangle("line", x, y, width, height)
+        if self.entity.ground then
+            love.graphics.setColor(1, 0.95, 0.25, 0.7)
+            love.graphics.line(width / 2, height, width / 2, height + 10)
+        end
+        if self.entity.getDebugLines then
+            local lines = self.entity:getDebugLines()
+            if Featherfall then
+                table.insert(lines, string.format(
+                    "mode %s swap %.2f",
+                    Featherfall.platforming and "platform" or "world",
+                    Featherfall.transition_timer or 0
+                ))
+            end
+            love.graphics.setColor(1, 1, 1, 0.85)
+            for index, line in ipairs(lines) do
+                love.graphics.print(line, x, y - 10 - ((#lines - index) * 10), 0, 0.5, 0.5)
+            end
+        end
         love.graphics.setColor(1, 1, 1, 1)
         return
     end

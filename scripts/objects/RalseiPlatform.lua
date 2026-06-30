@@ -32,6 +32,11 @@ function RalseiPlatform:init(state)
     self.state = state
     self.platform_floor = true
     self.platform_collision = state and (state.action_platform_mode or state.ralsei_platform_mode) == 3
+    self.moving_platform = true
+    self.rideable = true
+    self.is_entity = true
+    self.dif_x = 0
+    self.dif_y = 0
     self.collider = Hitbox(self, 0, 0, self.width, self.height)
     self.layer = state and state.follower and state.follower.layer or WORLD_LAYERS["events"]
     self.visible = true
@@ -40,7 +45,7 @@ function RalseiPlatform:init(state)
     end
 end
 
-function RalseiPlatform:syncFromState()
+function RalseiPlatform:syncFromState(record_motion)
     local state = self.state
     if not (state and state.follower and (state.action_platform_mode or state.ralsei_platform_mode or 0) > 0) then
         return false
@@ -52,12 +57,15 @@ function RalseiPlatform:syncFromState()
     self.layer = state.follower.layer + 0.01
     self.platform_collision = mode == 3 or (mode == 4 and (state.ralsei_fall_timer or 0) <= 15)
     Object.uncache(self)
+    if record_motion and Featherfall and Featherfall.updatePlatformDifference then
+        Featherfall:updatePlatformDifference(self)
+    end
     return true
 end
 
 function RalseiPlatform:update()
     super.update(self)
-    if not self:syncFromState() then
+    if not self:syncFromState(true) then
         self:remove()
     end
 end

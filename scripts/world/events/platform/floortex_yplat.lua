@@ -15,8 +15,16 @@ function PlatformFloortexYPlat:init(data)
     self.quicksand = self.properties["quicksand"] or 0
     self.conveyor_hspeed = self.properties["conveyor_hspeed"] or 0
     self.moving_platform = self.properties["moving_platform"] or false
+    self.rideable = self.properties["rideable"] or false
     self.is_slope = false
     self.is_entity = false
+    self.dif_x = 0
+    self.dif_y = 0
+end
+
+function PlatformFloortexYPlat:update()
+    super.update(self)
+    Featherfall:updatePlatformDifference(self)
 end
 
 function PlatformFloortexYPlat:draw()

@@ -14,14 +14,18 @@ function PlatformFloortexFloor:init(data)
     self.quicksand = self.properties["quicksand"] or 0
     self.conveyor_hspeed = self.properties["conveyor_hspeed"] or 0
     self.moving_platform = self.properties["moving_platform"] or false
+    self.rideable = self.properties["rideable"] or false
     self.is_slope = false
     self.is_entity = false
+    self.dif_x = 0
+    self.dif_y = 0
     Featherfall:setupFloortexProjection(self, self.properties)
     Featherfall:setupFloortexPlane(self, self.properties)
 end
 
 function PlatformFloortexFloor:update()
     super.update(self)
+    Featherfall:updatePlatformDifference(self)
     Featherfall:resolveFloortexPlane(self)
     Featherfall:syncFloortexProjectionLayer(self)
     Featherfall:syncFloortexSourceVisibility(self)

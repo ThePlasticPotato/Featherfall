@@ -138,6 +138,7 @@ local DEFAULT_PLATFORM_DATA = {
         base_sprite = "party/kris/platform/idle",
         animations = {
             idle = {sprite = "party/kris/platform/idle", speed = DR_ANIM_SPEED, loop = true},
+            crouch = {sprite = "party/kris/platform/crouch"},
             run = {sprite = "party/kris/platform/run", speed = drRunSpeed, loop = true},
             jump_up = {sprite = "party/kris/platform/jump_up"},
             jump_down = {sprite = "party/kris/platform/jump_down"},

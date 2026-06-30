@@ -97,6 +97,7 @@ function Featherfall:init()
         platform_statue = "platform/statue",
         platform_attackable = "platform/attackable",
         platform_floor = "platform/floor",
+        platform_slope = "platform/floor",
         platform_block = "platform/block",
         platform_checkpoint = "platform/checkpoint",
         platform_followercue = "platform/followercue",
@@ -488,6 +489,72 @@ function Featherfall:getDynamicPlatforms()
         end
     end
     return platforms
+end
+
+function Featherfall:updatePlatformDifference(object)
+    if not object then
+        return 0, 0
+    end
+
+    local previous_x = object.platform_previous_x
+    local previous_y = object.platform_previous_y
+    if previous_x == nil or previous_y == nil then
+        object.platform_previous_x = object.x
+        object.platform_previous_y = object.y
+        object.dif_x = 0
+        object.dif_y = 0
+        return 0, 0
+    end
+
+    local raw_dx = object.x - previous_x
+    local raw_dy = object.y - previous_y
+    local speed_x = object.hspeed or object.speed_x or 0
+    local speed_y = object.vspeed or object.speed_y or 0
+    local dx = raw_dx == 0 and 0 or (MathUtils.sign(raw_dx) * math.max(math.abs(speed_x), math.abs(raw_dx)))
+    local dy = raw_dy == 0 and 0 or (MathUtils.sign(raw_dy) * math.max(math.abs(speed_y), math.abs(raw_dy)))
+
+    object.dif_x = dx
+    object.dif_y = dy
+    object.platform_previous_x = object.x
+    object.platform_previous_y = object.y
+
+    if (dx ~= 0 or dy ~= 0) and object.platform_floortex then
+        self:shiftFloortexMetadataAfterMotion(object, dx, dy)
+    end
+
+    return dx, dy
+end
+
+function Featherfall:shiftFloortexMetadataAfterMotion(object, dx, dy)
+    if dy ~= 0 then
+        for _, key in ipairs({
+            "y_plat",
+            "y_ow",
+            "bbox_bottom_ow",
+            "bbox_top_ow",
+            "bbox_bottom_plat",
+            "bbox_top_plat",
+        }) do
+            if object[key] then
+                object[key] = object[key] + dy
+            end
+        end
+    end
+
+    if dx ~= 0 then
+        if object.front_x then
+            object.front_x = object.front_x + dx
+        end
+        if object.back_x then
+            object.back_x = object.back_x + dx
+        end
+    end
+
+    object.floortex_plane_dirty = true
+    object.floortex_source_bounds_dirty = true
+    if self.markFloortexDirty then
+        self:markFloortexDirty()
+    end
 end
 
 function Featherfall:isMenuTargetAvailable(target, player)
