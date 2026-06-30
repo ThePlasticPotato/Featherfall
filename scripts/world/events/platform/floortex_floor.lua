@@ -1,0 +1,41 @@
+---@class PlatformFloortexFloor : Event
+local PlatformFloortexFloor, super = Class(Event)
+
+function PlatformFloortexFloor:init(data)
+    super.init(self, data)
+
+    self.properties = data.properties or {}
+    self.solid = false
+    self.platform_floortex = true
+    self.platform_floortex_floor = true
+    self.platform_floor = self.properties["collision"] ~= false
+    self.platform_collision = self.platform_floor
+    self.align_bottom_1tile = self.properties["align_bottom_1tile"] ~= false
+    self.quicksand = self.properties["quicksand"] or 0
+    self.conveyor_hspeed = self.properties["conveyor_hspeed"] or 0
+    self.moving_platform = self.properties["moving_platform"] or false
+    self.is_slope = false
+    self.is_entity = false
+    Featherfall:setupFloortexProjection(self, self.properties)
+    Featherfall:setupFloortexPlane(self, self.properties)
+end
+
+function PlatformFloortexFloor:update()
+    super.update(self)
+    Featherfall:resolveFloortexPlane(self)
+    Featherfall:syncFloortexProjectionLayer(self)
+    Featherfall:syncFloortexSourceVisibility(self)
+end
+
+function PlatformFloortexFloor:draw()
+    Featherfall:resolveFloortexPlane(self)
+    Featherfall:drawFloortexProjection(self)
+    super.draw(self)
+end
+
+function PlatformFloortexFloor:onRemove(parent)
+    Featherfall:restoreFloortexSourceVisibility(self)
+    super.onRemove(self, parent)
+end
+
+return PlatformFloortexFloor
