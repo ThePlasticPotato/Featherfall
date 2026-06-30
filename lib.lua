@@ -100,6 +100,8 @@ function Featherfall:init()
         platform_checkpoint = "platform/checkpoint",
         platform_followercue = "platform/followercue",
         platform_action_target = "platform/action_target",
+        platform_fallcue = "platform/fall_cue",
+        platform_fall_cue = "platform/fall_cue",
         platform_floortex_floor = "platform/floortex_floor",
         platform_floortex_front = "platform/floortex_front",
         platform_floortex_back = "platform/floortex_back",
@@ -803,9 +805,9 @@ function Featherfall:getFloortexProjectionRect(object, source_x, source_y, sourc
             if object.platform_floortex_back then
                 dest_y = floor_y - dest_height
             end
-            return properties["dest_x"] or floor_x,
+            return properties["dest_x"] or object.x or floor_x,
                 properties["dest_y"] or dest_y,
-                properties["dest_width"] or floor_width,
+                properties["dest_width"] or object.width or source_width or floor_width,
                 dest_height
         end
     end
@@ -986,12 +988,9 @@ function Featherfall:drawFloortexProjection(object)
     local tile_height = map.tile_height
 
     for _, layer in ipairs(layers) do
-        local r, g, b, a = layer:getDrawColor()
+        local r, g, b = layer:getDrawColor()
         local projection_opacity = object.properties and object.properties["projection_opacity"]
-        if projection_opacity == nil then
-            projection_opacity = object.properties and object.properties["opacity"]
-        end
-        Draw.setColor(r, g, b, projection_opacity or a or 1)
+        Draw.setColor(r, g, b, projection_opacity or 1)
 
         local start_x = math.max(0, math.floor((source_x - layer.x) / tile_width))
         local end_x = math.min(layer.map_width - 1, math.floor(((source_x + source_width - 1) - layer.x) / tile_width))

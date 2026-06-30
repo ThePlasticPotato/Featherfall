@@ -24,11 +24,19 @@ function PlatformTransitionProp:init(actor, x, y, facing, animation_name, durati
     self.start_frame = start_frame
     self.transition_kind = options.kind or "linear"
     self.manual_speed = options.manual_speed or 0.25
+    self.fallmode = options.fallmode or options.fall_mode or 0
+    self.fall_vspeed = options.fall_vspeed or 0
+    self.fall_land_timer = options.fall_land_timer or 10
+    self.fall_animation = options.fall_animation or "jump_down"
+    self.land_animation = options.land_animation or "land"
     self:setOrigin(0.5, 1)
     self:setScale(2)
 
     self.sprite = nil
     self:setPlatformAnimation(self.animation_name)
+    if self.fallmode == 1 then
+        self:setPlatformAnimation(self.fall_animation)
+    end
 end
 
 function PlatformTransitionProp:getPlatformAnimation(name)
@@ -67,6 +75,7 @@ function PlatformTransitionProp:setPlatformAnimation(name)
         return
     end
 
+    self.animation_name = name
     self.platform_animation = animation
     self.manual_frame = self.start_frame or 1
     local offset_x, offset_y = self:getPlatformOffset(name)
@@ -130,6 +139,62 @@ function PlatformTransitionProp:getTransitionY(progress)
     return Utils.ease(self.start_y, hover_y, hover_progress, "inOutCubic")
 end
 
+function PlatformTransitionProp:collidesWithPlatformMarker(predicate)
+    if not (Game.world and Game.world.map) then
+        return false
+    end
+
+    for _, event in ipairs(Game.world.map.events or {}) do
+        if predicate(event) and event.collider and self:collidesWith(event.collider) then
+            return true
+        end
+    end
+    return false
+end
+
+function PlatformTransitionProp:isOnFallCue()
+    return self:collidesWithPlatformMarker(function(event)
+        return event.platform_fall_cue
+    end)
+end
+
+function PlatformTransitionProp:isInsideSolidBlock()
+    return self:collidesWithPlatformMarker(function(event)
+        return event.platform_block or (event.solid and event.platform_collision ~= false)
+    end)
+end
+
+function PlatformTransitionProp:updateFallMode()
+    if self.fallmode == 1 then
+        self.fall_vspeed = math.min((self.fall_vspeed or 0) + DTMULT, 20)
+        self.y = self.y + (self.fall_vspeed * DTMULT)
+        if self.animation_name ~= self.fall_animation then
+            self:setPlatformAnimation(self.fall_animation)
+        end
+
+        if not self:isInsideSolidBlock() and not self:isOnFallCue() and self.y >= 0 then
+            self.fallmode = 2
+            self.fall_vspeed = 0
+            self.fall_land_timer = 10
+            Assets.playSound(Featherfall.sounds.landing, nil, 1.2)
+            self:setPlatformAnimation(self.land_animation)
+            if self.sprite then
+                self.sprite:stop()
+                self.sprite:setFrame(math.max(1, math.min(2, #(self.sprite.frames or {1}))))
+            end
+        end
+        return true
+    elseif self.fallmode == 2 then
+        self.fall_land_timer = MathUtils.approach(self.fall_land_timer or 0, 0, DTMULT)
+        if self.fall_land_timer <= 0 then
+            self:finish()
+            self:remove()
+        end
+        return true
+    end
+    return false
+end
+
 function PlatformTransitionProp:finish()
     if self.finished then
         return
@@ -146,6 +211,10 @@ function PlatformTransitionProp:update()
     super.update(self)
 
     self:updateManualAnimation()
+
+    if self:updateFallMode() then
+        return
+    end
 
     self.timer = self.timer + DTMULT
     local progress = math.min(self.timer / self.duration, 1)

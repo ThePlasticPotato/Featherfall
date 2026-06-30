@@ -17,7 +17,8 @@ function PlatformStatue:init(data)
     self.platform_statue = true
     self.solid = self.properties["solid"] == true
     self.interact_buffer = 8 / 30
-    self.can_hit = self.properties["can_hit"] ~= false
+    self.can_hit_default = self.properties["can_hit"] ~= false
+    self.can_hit = self.can_hit_default
     self.floating = self.properties["floating"] == true
     self.hit = 0
     self.timer_max = self.properties["timer_max"] or Featherfall.constants.transition_timemax
@@ -91,9 +92,8 @@ function PlatformStatue:resolvePlatformTransform()
 
     local floortex = self:getLinkedFloortex()
     if floortex then
-        local floor_y_ow = floortex.y_ow or floortex.floortex_source_y or floortex.y
         local floor_y_plat = floortex.y_plat or floortex.y
-        self.y_plat = floor_y_plat + ((self.y_ow - floor_y_ow) * 0.1) + self.y_plat_offset
+        self.y_plat = floor_y_plat - 3 + self.y_plat_offset
     else
         self.y_plat = self.y_ow + self.y_plat_offset
     end
@@ -128,7 +128,7 @@ function PlatformStatue:update()
     local was_cooling_down = self.hit_cooldown > 0
     self.hit_cooldown = MathUtils.approach(self.hit_cooldown, 0, DTMULT)
     self.wings_timer = MathUtils.approach(self.wings_timer, 0, DTMULT)
-    if self.hit_cooldown <= 0 and not self.can_hit then
+    if self.hit_cooldown <= 0 and not self.can_hit and self.can_hit_default then
         self.can_hit = true
         self.hit = 0
         if was_cooling_down then
@@ -144,7 +144,7 @@ function PlatformStatue:update()
     self.image_index = MathUtils.approach(self.image_index, max_frame, 0.25 * DTMULT)
     self.pal_index = MathUtils.wrap(self.pal_index + (0.2 * DTMULT), 0, 6)
 
-    local ys = Featherfall:getFloortexTransition()
+    local _, ys = Featherfall:getFloortexTransition()
     if ys > 0.5 and self.can_hit then
         self.shine_alpha = math.min(self.shine_alpha + (0.1 * DTMULT), 1)
     else
@@ -158,6 +158,24 @@ function PlatformStatue:getPaletteIndex()
         return 7
     end
     return self.pal_index
+end
+
+function PlatformStatue:lockAllStatuesForHit()
+    local map = Game.world and Game.world.map
+    if not map then
+        self.hit = 1
+        self.can_hit = false
+        self.hit_cooldown = self.timer_max
+        return
+    end
+
+    for _, event in ipairs(map.events or {}) do
+        if event.platform_statue then
+            event.hit = 1
+            event.can_hit = false
+            event.hit_cooldown = event.timer_max or self.timer_max
+        end
+    end
 end
 
 function PlatformStatue:drawPalettedTexture(texture, x, y, sx, sy, origin_x, origin_y, palette_index, alpha)
@@ -240,9 +258,7 @@ function PlatformStatue:onPlatformAttackHit(hitbox)
         return false
     end
 
-    self.hit = 1
-    self.can_hit = false
-    self.hit_cooldown = 30
+    self:lockAllStatuesForHit()
     Featherfall:makeRipple(self.x + (self.width / 2), self.y + (self.height / 2), {
         life = 8,
         color = 16777215,
@@ -294,7 +310,7 @@ end
 function PlatformStatue:draw()
     local anchor_x = self.width / 2
     local anchor_y = self.height
-    local ys = Featherfall:getFloortexTransition()
+    local _, ys = Featherfall:getFloortexTransition()
     local shine = self.shine_alpha * ys * (0.5 + (0.15 * math.sin(self.shine_timer * 0.02)))
 
     if self.wings_timer > 0 then
