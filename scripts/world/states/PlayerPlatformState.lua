@@ -125,6 +125,21 @@ function PlayerPlatformState:init(player)
     self.heart_retreating = false
     self.key_left = false
     self.key_right = false
+    self.movement_direction = 0
+    self.dashing = false
+    self.dashing_end = 0
+    self.dashsign = 0
+    self.dashspeed = Featherfall.constants.dashspeed or 11
+    self.dashspeed_modified = self.dashspeed
+    self.dash_transition_con = 0
+    self.dash_transition_timer = 0
+    self.dash_position = {0, 0}
+    self.dash_lerp_start_x = 0
+    self.dash_lerp_start_y = 0
+    self.dash_lerp_target_x = 0
+    self.dash_lerp_target_y = 0
+    self.dash_gate = nil
+    self.dashlines = nil
     self.checkpoint_x = 0
     self.checkpoint_y = 0
     self.respawn_leap_enabled = true
@@ -185,6 +200,196 @@ function PlayerPlatformState:syncFromEntity()
         self.time_since_ground = 0
     else
         self.time_since_ground = (self.time_since_ground or 0) + DTMULT
+    end
+    if math.abs(self.hspeed or 0) > 0.1 then
+        self.movement_direction = self.hspeed < 0 and -1 or 1
+    end
+end
+
+function PlayerPlatformState:findDashGate()
+    if not (Game.world and Game.world.map and self.entity) then
+        return nil
+    end
+
+    for _, event in ipairs(Game.world.map.events or {}) do
+        if event.platform_dash_gate and event.usable ~= false and event.collider
+            and self.entity:collidesWithEvent(event, self.player.x, self.player.y)
+        then
+            return event
+        end
+    end
+end
+
+function PlayerPlatformState:getDashDirection(move)
+    if move and move ~= 0 then
+        return move < 0 and -1 or 1
+    end
+    if self.movement_direction and self.movement_direction ~= 0 then
+        return self.movement_direction
+    end
+    if math.abs(self.hspeed or 0) > 0.1 then
+        return self.hspeed < 0 and -1 or 1
+    end
+    return self.facing == "left" and -1 or 1
+end
+
+function PlayerPlatformState:beginDashTransition(gate, direction)
+    if not (gate and direction and direction ~= 0) then
+        return
+    end
+
+    local gate_x, gate_y
+    if gate.getDashPosition then
+        gate_x, gate_y = gate:getDashPosition()
+    elseif gate.getGateOrigin then
+        gate_x, gate_y = gate:getGateOrigin()
+    else
+        gate_x = gate.x + ((gate.width or 0) / 2)
+        gate_y = gate.y + ((gate.height or 0) / 2)
+    end
+
+    if gate.markInitiated then
+        gate:markInitiated()
+    end
+
+    self.dash_transition_con = 1
+    self.dash_transition_timer = 0
+    self.dash_position[1] = gate_x
+    self.dash_position[2] = gate_y
+    self.dash_lerp_start_x = self.player.x
+    self.dash_lerp_start_y = self.player.y
+    self.dash_lerp_target_x = gate_x + (20 * direction)
+    self.dash_lerp_target_y = gate_y - 62
+    self.dashsign = direction
+    self.dash_gate = gate
+    self.attacking = false
+    self.dashing = false
+    self.dashing_end = 0
+    self.land_anim = true
+    self.turn_anim = false
+    self.runstop_anim = false
+    self.facing = direction < 0 and "left" or "right"
+    self.player:setFacing(self.facing)
+    self.player.sprite.flip_x = self:getPlatformFlipX()
+    self:setPlayerAnimation("land")
+
+    if self.entity then
+        self.entity.hspeed = 0
+        self.entity.vspeed = 0
+        self.entity.grounded = false
+        self.entity.ground = nil
+        self.entity.wallcollision = false
+    end
+    self.hspeed = 0
+    self.vspeed = 0
+
+    Assets.playSound(Featherfall.sounds.dash_cancel)
+end
+
+function PlayerPlatformState:startDashing()
+    self.dash_transition_con = 0
+    self.dash_transition_timer = 0
+    self.dashing = true
+    self.dashing_end = 0
+    self.attacking = false
+    self.land_anim = false
+    self.turn_anim = false
+    self.runstop_anim = false
+
+    if self.entity then
+        self.entity.wallcollision = true
+        self.entity.hspeed = self.dashsign * 12
+        self.entity.vspeed = 0
+        self.entity.grounded = true
+        self.entity.jump_time = 0
+    end
+    self.hspeed = self.dashsign * 12
+    self.vspeed = 0
+    self.movement_direction = self.dashsign
+    self:setPlayerAnimation("run")
+
+    Assets.stopSound(Featherfall.sounds.dash_start)
+    Assets.playSound(Featherfall.sounds.dash_start)
+    if Game.world and PlatformDashLines then
+        self.dashlines = Game.world:spawnObject(PlatformDashLines(self.player, -15 * self.dashsign), WORLD_LAYERS["above_events"])
+    end
+end
+
+function PlayerPlatformState:updateDashTransition()
+    if self.dash_transition_con <= 0 then
+        return false
+    end
+
+    self.dash_transition_timer = self.dash_transition_timer + DTMULT
+    local progress = MathUtils.clamp(self.dash_transition_timer / 8, 0, 1)
+    self.player.x = Utils.ease(self.dash_lerp_start_x, self.dash_lerp_target_x, progress, "outCubic")
+    self.player.y = Utils.ease(self.dash_lerp_start_y, self.dash_lerp_target_y, progress, "outCubic")
+    Object.uncache(self.player)
+    if self.entity then
+        self.entity.hspeed = 0
+        self.entity.vspeed = 0
+    end
+    self.hspeed = 0
+    self.vspeed = 0
+
+    if self.dash_transition_timer >= 17 then
+        self:startDashing()
+    end
+
+    return true
+end
+
+function PlayerPlatformState:updateDashGate(move)
+    local gate = self:findDashGate()
+    if not gate then
+        return
+    end
+
+    if self.dashing then
+        if gate.usable and not gate.just_initiated then
+            self.dashing = false
+            self.dashing_end = 15
+            if gate.consume then
+                gate:consume()
+            end
+            Assets.playSound(Featherfall.sounds.dash_cancel)
+        end
+        return
+    end
+
+    if self.dashing_end > 0 or self.jumphovering then
+        return
+    end
+
+    local direction = self:getDashDirection(move)
+    if gate.matchesDirection and not gate:matchesDirection(direction) then
+        return
+    end
+    if gate.just_initiated then
+        return
+    end
+
+    self:beginDashTransition(gate, direction)
+end
+
+function PlayerPlatformState:updateDashing(move)
+    self.dashspeed_modified = self.dashspeed
+    if self.dashing then
+        self.land_anim = false
+        self.turn_anim = false
+        self.runstop_anim = false
+        if self.entity then
+            self.entity.hspeed = MathUtils.approach(self.entity.hspeed, (self.dashspeed_modified * self.dashsign), 0.35 * DTMULT)
+        end
+    elseif self.dashing_end > 0 then
+        self.dashing_end = MathUtils.approach(self.dashing_end, 0, DTMULT)
+        if math.abs(self.hspeed or 0) <= 2 then
+            self:beginRunstopAnimation()
+            self.dashing_end = 0
+        else
+            self.turn_anim = true
+            self.turn_anim_timer = self:getAnimationDuration("turn")
+        end
     end
 end
 
@@ -958,7 +1163,7 @@ function PlayerPlatformState:beginRunstopAnimation()
 end
 
 function PlayerPlatformState:updateMovementAnimationFlags(key_left, key_right, move)
-    if self.attacking or not self.on_ground then
+    if self.attacking or not self.on_ground or self.dashing or self.dashing_end > 0 then
         self.land_anim = false
         self.turn_anim = false
         self.runstop_anim = false
@@ -1483,6 +1688,11 @@ function PlayerPlatformState:onUpdate()
         self.attack_press_timer = MathUtils.approach(self.attack_press_timer, 0, DTMULT)
         return
     end
+    if self:updateDashTransition() then
+        self:setPlayerAnimation("land")
+        self.attack_press_timer = MathUtils.approach(self.attack_press_timer, 0, DTMULT)
+        return
+    end
 
     local key_left = false
     local key_right = false
@@ -1527,7 +1737,9 @@ function PlayerPlatformState:onUpdate()
         self.player.sprite.flip_x = self:getPlatformFlipX()
     end
 
-    self:updateAttackInput()
+    if not self.dashing and self.dashing_end <= 0 then
+        self:updateAttackInput()
+    end
 
     local grounded_attack = self.attacking and self.entity and self.entity.grounded
     if self.on_ground and not grounded_attack then
@@ -1549,16 +1761,35 @@ function PlayerPlatformState:onUpdate()
             self.attacking = false
         end
     end
+    self:updateDashGate(move)
+    if self.dash_transition_con > 0 then
+        self:updateDashTransition()
+        self:setPlayerAnimation("land")
+        self.attack_press_timer = MathUtils.approach(self.attack_press_timer, 0, DTMULT)
+        return
+    end
+    self:updateDashing(move)
     self.entity:updatePlayer({
         move = move,
         key_left = key_left,
         key_right = key_right,
-        dont_accel = grounded_attack,
-        force_decel = grounded_attack,
-        block_jump = self.attacking or self.jumphovering,
+        dont_accel = grounded_attack or self.dashing or self.dashing_end > 0,
+        force_decel = grounded_attack or self.dashing_end > 0,
+        hspeed_max = (self.dashing or self.dashing_end > 0) and self.dashspeed_modified or nil,
+        hspeed_min = (self.dashing or self.dashing_end > 0) and -self.dashspeed_modified or nil,
+        block_jump = self.attacking or self.jumphovering or self.dashing or self.dashing_end > 0,
         press_jump = press_jump,
         key_jump = key_jump,
     })
+    if self.dashing and self.entity.wallhitspd ~= 0 then
+        self.attacking = false
+        self.dashing = false
+        self.entity.grounded = false
+        self.entity.vspeed = -14
+        self.entity.hspeed = -(self.entity.wallhitspd or 0) * 0.25
+        self.hspeed = self.entity.hspeed
+        self.vspeed = self.entity.vspeed
+    end
     if self.entity.jump_ceiling_blocked then
         Assets.playSound(Featherfall.sounds.landing)
         self:spawnDust(-1, Featherfall.assets.effects.landingdust_new)
@@ -1573,7 +1804,9 @@ function PlayerPlatformState:onUpdate()
     self:updateAttack()
     self:updateJumpHover(press_jump, key_jump, key_left, key_right, key_up, key_down)
 
-    if self.attacking or self.attack_end_visible then
+    if self.dashing then
+        self:setPlayerAnimation("run")
+    elseif self.attacking or self.attack_end_visible then
         self:applyAttackAnimation()
     elseif not self.on_ground then
         self:setPlayerAnimation(self:getAirAnimationName())

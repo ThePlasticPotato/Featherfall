@@ -26,6 +26,9 @@ function FollowerPlatformState:init(follower)
     self.targetmode_sprite_pause = nil
     self.timer = 0
     self.history_step_timer = 0
+    self.dash_transition_active = false
+    self.dash_lerp_start_x = 0
+    self.dash_lerp_start_y = 0
     self.offscreen_despawn_cooldown = 0
     self.recover_alpha_timer = 0
     self.respawn_leap_enabled = true
@@ -1218,6 +1221,63 @@ function FollowerPlatformState:updateTargetModePause(player)
     return true
 end
 
+function FollowerPlatformState:getFollowerDashIndex()
+    if not (Game.world and Game.world.followers) then
+        return 1
+    end
+    for index, follower in ipairs(Game.world.followers) do
+        if follower == self.follower then
+            return index
+        end
+    end
+    return 1
+end
+
+function FollowerPlatformState:updateDashTransition(player)
+    local player_state = player and player.platform_state
+    if not (player_state and player_state.dash_transition_con and player_state.dash_transition_con > 0) then
+        self.dash_transition_active = false
+        if self.entity then
+            self.entity.wallcollision = true
+        end
+        return false
+    end
+
+    if not self.dash_transition_active then
+        self.dash_transition_active = true
+        self.dash_lerp_start_x = self.follower.x
+        self.dash_lerp_start_y = self.follower.y
+    end
+
+    local direction = player_state.dashsign or 1
+    local index = self:getFollowerDashIndex()
+    local gate_x = player_state.dash_position and player_state.dash_position[1] or player.x
+    local gate_y = player_state.dash_position and player_state.dash_position[2] or player.y
+    local target_x = gate_x + ((20 - (40 * index)) * direction)
+    local target_y = gate_y - 62
+    local progress = MathUtils.clamp((player_state.dash_transition_timer or 0) / 8, 0, 1)
+    local old_x, old_y = self.follower.x, self.follower.y
+    self.follower.x = Utils.ease(self.dash_lerp_start_x, target_x, progress, "outCubic")
+    self.follower.y = Utils.ease(self.dash_lerp_start_y, target_y, progress, "outCubic")
+    Object.uncache(self.follower)
+
+    local mult = math.max(DTMULT, 0.001)
+    self.hspeed = (self.follower.x - old_x) / mult
+    self.vspeed = (self.follower.y - old_y) / mult
+    self.on_ground = false
+    self.facing = direction < 0 and "left" or "right"
+    self.follower:setFacing(self.facing)
+    self.follower.sprite.flip_x = self:getPlatformFlipX()
+    if self.entity then
+        self.entity.hspeed = 0
+        self.entity.vspeed = 0
+        self.entity.wallcollision = false
+        self.entity.grounded = false
+    end
+    self:setFollowerAnimation("land")
+    return true
+end
+
 function FollowerPlatformState:onEnter(old_state, settings)
     settings = settings or {}
 
@@ -1361,6 +1421,9 @@ function FollowerPlatformState:onUpdate()
     local player = Game.world and Game.world.player
     self:updateActionOutline()
     if self:updateTargetModePause(player) then
+        return
+    end
+    if self:updateDashTransition(player) then
         return
     end
 
