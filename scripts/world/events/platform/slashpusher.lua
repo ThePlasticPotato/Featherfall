@@ -237,8 +237,8 @@ function PlatformSlashpusher:init(data)
     self.lifetime = tonumber(self.properties["lifetime"]) or -1
     self.orb_density = tonumber(self.properties["orb_density"]) or 24
     self.orb_color = PlatformActionUtils.parseColor(self.properties["orb_color"] or self.properties["orb_col"]) or {1, 1, 1}
-    self.stem_ease_x = self.properties["stem_ease_x"] or self.properties["stem_x"] or "linear"
-    self.stem_ease_y = self.properties["stem_ease_y"] or self.properties["stem_y"] or "linear"
+    self.stem_ease_x = resolveStemEase(self.properties["stem_ease_x"] or self.properties["stem_x"])
+    self.stem_ease_y = resolveStemEase(self.properties["stem_ease_y"] or self.properties["stem_y"])
     self.leaves = nil
     self.arc_increments = {}
     self.init2 = false
