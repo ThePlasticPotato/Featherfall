@@ -6,8 +6,17 @@ local function isPlatformTransitioning()
         and Featherfall:isTransitioning()
 end
 
+local function isPlatformingActive()
+    return Featherfall
+        and Featherfall.isPlatformModeActive
+        and Featherfall:isPlatformModeActive()
+end
+
 function World:canInteract()
     if isPlatformTransitioning() then
+        return false
+    end
+    if isPlatformingActive() then
         return false
     end
     return super.canInteract(self)
@@ -17,7 +26,7 @@ function World:canOpenMenu()
     if isPlatformTransitioning() then
         return false
     end
-    if Featherfall and Featherfall.isPlatformModeActive and Featherfall:isPlatformModeActive() then
+    if isPlatformingActive() then
         if not Featherfall:hasMenuTarget(self.player) then
             return false
         end
