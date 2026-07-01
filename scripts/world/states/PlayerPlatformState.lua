@@ -1,9 +1,8 @@
 ---@class PlayerPlatformState : PlatformActorState
 ---@field player Player
-local PlayerPlatformState, super = Class(PlatformActorState)
-
 local PlatformActorState = libRequire("featherfall", "scripts.world.states.PlatformActorState")
 local PlatformActions = libRequire("featherfall", "scripts.world.states.PlatformActions")
+local PlayerPlatformState, super = Class(PlatformActorState)
 
 local function normalizeTargetKinds(kinds)
     if type(kinds) ~= "table" then

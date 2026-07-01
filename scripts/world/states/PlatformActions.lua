@@ -82,6 +82,10 @@ end
 
 function PlatformActions:getData()
     local state = self.state
+    if not (state and state.getPlatformActor) then
+        return nil
+    end
+
     local actor = state:getPlatformActor()
     local kind = state.getActionKind and state:getActionKind() or (state.getFollowerKind and state:getFollowerKind())
     local data
