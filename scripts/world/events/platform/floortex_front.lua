@@ -11,6 +11,7 @@ function PlatformFloortexFront:init(data)
     self.platform_collision = false
     self.source_prefix = self.properties["source_prefix"] or (Featherfall and Featherfall:getWallLayerPrefix())
     self.yorigin_id = self.properties["yorigin_id"]
+    self.blend = self.properties["blend"] and TiledUtils.parseColorProperty(self.properties["blend"]) or COLORS.white
     Featherfall:setupFloortexProjection(self, self.properties)
 end
 

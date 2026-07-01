@@ -1484,14 +1484,26 @@ function PlayerPlatformState:onUpdate()
         return
     end
 
-    local key_left = Input.down("left")
-    local key_right = Input.down("right")
-    local key_up = Input.down("up")
-    local key_down = Input.down("down")
-    local press_jump = Input.pressed("cancel")
-    local key_jump = Input.down("cancel")
-    local press_left = Input.pressed("left")
-    local press_right = Input.pressed("right")
+    local key_left = false
+    local key_right = false
+    local key_up = false
+    local key_down = false
+    local press_jump = false
+    local key_jump = false
+    local press_left = false
+    local press_right = false
+
+    if self.player:isPlatMovementEnabled() then
+        key_left = Input.down("left")
+        key_right = Input.down("right")
+        key_up = Input.down("up")
+        key_down = Input.down("down")
+        press_jump = Input.pressed("cancel")
+        key_jump = Input.down("cancel")
+        press_left = Input.pressed("left")
+        press_right = Input.pressed("right")
+    end
+
     if key_left and key_right then
         if self.key_left and key_left then
             key_right = false

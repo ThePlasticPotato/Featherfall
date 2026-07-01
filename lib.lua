@@ -493,6 +493,12 @@ function Featherfall:isPlatformModeActive()
     return self.platforming or (player and player.state == self.state) or false
 end
 
+function Featherfall:isTransitioning()
+    -- local offset = self.transition_mode == 1 and self.transition_extra_time or 0
+    local offset = 0
+    return (self.transition_timer - offset) > 0
+end
+
 function Featherfall:isPlatformPaused()
     if Game.world and Game.world.state == "MENU" and Game.world.menu then
         return true
@@ -1661,12 +1667,12 @@ function Featherfall:drawFloortexProjection(object)
         return
     end
 
-    if object.platform_floortex_front then
-        local _, yscale = self:getFloortexTransition()
-        if yscale > 0.8 then
-            return
-        end
-    end
+    -- if object.platform_floortex_front then
+    --     local _, yscale = self:getFloortexTransition()
+    --     if yscale > 0.8 then
+    --         return
+    --     end
+    -- end
 
     local map = Game.world and Game.world.map
     if not map then
@@ -1692,6 +1698,17 @@ function Featherfall:drawFloortexProjection(object)
 
     for _, layer in ipairs(layers) do
         local r, g, b = layer:getDrawColor()
+        if object.blend then
+            local factor
+            if object.platform_floortex_back then
+                _, factor = self:getFloortexTransition()
+            else
+                factor = 0
+            end
+            r = MathUtils.lerp(object.blend[1], r, factor)
+            g = MathUtils.lerp(object.blend[2], g, factor)
+            b = MathUtils.lerp(object.blend[3], b, factor)
+        end
         local projection_opacity = object.properties and object.properties["projection_opacity"]
         Draw.setColor(r, g, b, projection_opacity or 1)
 

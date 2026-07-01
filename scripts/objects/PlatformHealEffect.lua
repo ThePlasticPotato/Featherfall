@@ -117,6 +117,6 @@ function PlatformHealEffect:draw()
     Draw.setColor(1, 1, 1, 1)
 end
 
-_G.PlatformHealEffect = PlatformHealEffect
+-- _G.PlatformHealEffect = PlatformHealEffect
 
 return PlatformHealEffect

@@ -19,6 +19,7 @@ function PlatformFloortexFloor:init(data)
     self.is_entity = false
     self.dif_x = 0
     self.dif_y = 0
+    self.blend = self.properties["blend"] and TiledUtils.parseColorProperty(self.properties["blend"]) or COLORS.white
     Featherfall:setupFloortexProjection(self, self.properties)
     Featherfall:setupFloortexPlane(self, self.properties)
     Featherfall:setupPlatformMotion(self, self.properties)

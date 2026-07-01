@@ -19,6 +19,7 @@ function PlatformStatue:init(data)
     self.properties = self.properties or (data and data.properties) or {}
     self.interact_buffer = 8 / 30
     self.floating = self.properties["floating"] == true
+    self.timer = 0
     self.timer_max = self.properties["timer_max"] or Featherfall.constants.transition_timemax
     self.platform_snap_range = self.properties["platform_snap_range"] or 120
     self.platform_x = self.properties["platform_x"]
@@ -58,7 +59,7 @@ function PlatformStatue:getPlatformEnterPosition(player)
     local target_y = self.platform_y
 
     if player and self.platform_snap_range then
-        local distance = Utils.dist(player.x, player.y, center_x, self.y_ow)
+        local distance = MathUtils.dist(player.x, player.y, center_x, self.y_ow)
         if distance >= self.platform_snap_range then
             target_x = nil
         end
@@ -133,7 +134,16 @@ function PlatformStatue:update()
     self.image_index = MathUtils.approach(self.image_index, max_frame, 0.25 * DTMULT)
     self.pal_index = MathUtils.wrap(self.pal_index + (0.2 * DTMULT), 0, 6)
 
-    local _, ys = Featherfall:getFloortexTransition()
+    if self.timer > 0 then
+        self.timer = self.timer - DTMULT
+        if self.timer <= 0 then
+            self.hit = 0
+            self.can_hit = true
+            Assets.stopAndPlaySound(Featherfall.sounds.statue_recover, 1, 1.25)
+        end
+    end
+
+    local ys = Featherfall:getFloortexTransition()
     if ys > 0.5 and self.can_hit then
         self.shine_alpha = math.min(self.shine_alpha + (0.1 * DTMULT), 1)
     else
@@ -142,13 +152,13 @@ function PlatformStatue:update()
     self.shine_timer = self.shine_timer + DTMULT
 end
 
-function PlatformStatue:onPlatformAttackCooldownEnd()
-    local was_locked = not self.can_hit
-    super.onPlatformAttackCooldownEnd(self)
-    if was_locked and self.can_hit then
-        Assets.playSound(Featherfall.sounds.statue_recover, nil, 1.25)
-    end
-end
+-- function PlatformStatue:onPlatformAttackCooldownEnd()
+--     local was_locked = not self.can_hit
+--     super.onPlatformAttackCooldownEnd(self)
+--     if was_locked and self.can_hit then
+--         Assets.stopAndPlaySound(Featherfall.sounds.statue_recover, nil, 1.25)
+--     end
+-- end
 
 function PlatformStatue:getPaletteIndex()
     if not self.can_hit or not Featherfall:isEnabled(self) then
@@ -236,6 +246,7 @@ function PlatformStatue:onInteract(player, dir)
         end
         if world_player.state ~= Featherfall.state and not Featherfall:shouldRefuseStatueUse(self, player) then
             if Featherfall:enterPlatformMode(self) then
+                self.timer = self.timer_max
                 self:beginEnterEffects()
                 return true
             end
@@ -279,6 +290,8 @@ function PlatformStatue:onPlatformAttack(hitbox)
     if hitbox and hitbox.doHit then
         hitbox:doHit()
     end
+    self.timer = self.timer_max
+    Assets.playSound(Featherfall.sounds.petal_grab, nil, 1.25)
     return true
 end
 
@@ -310,10 +323,10 @@ end
 function PlatformStatue:draw()
     local anchor_x = self.width / 2
     local anchor_y = self.height
-    local _, ys = Featherfall:getFloortexTransition()
+    local ys = Featherfall:getFloortexTransition()
     local shine = self.shine_alpha * ys * (0.5 + (0.15 * math.sin(self.shine_timer * 0.02)))
 
-    if self.wings_timer > 0 then
+    if self.wings_timer > 0 and Featherfall:getConfig("draw_wings", true) then
         local frames = Assets.getFrames(Featherfall.assets.statue.wings)
         local frame_count = frames and #frames or 1
         local progress = 1 - (self.wings_timer / math.max(self.wings_timemax, 1))

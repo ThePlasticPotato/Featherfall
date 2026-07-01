@@ -22,6 +22,20 @@ function Player:isCameraAttachable()
     return super.isCameraAttachable(self)
 end
 
+function Player:isMovementEnabled()
+    return super.isMovementEnabled(self)
+        and not Featherfall:isTransitioning()
+end
+
+function Player:isPlatMovementEnabled()
+    return not OVERLAY_OPEN
+        and not Game.lock_movement
+        and Game.state == "OVERWORLD"
+        and self.world.state == "GAMEPLAY"
+        and self.hurt_timer == 0
+        and not Featherfall:isTransitioning()
+end
+
 function Player:requestPlatformAction(target, data)
     if self.platform_state then
         return self.platform_state:requestAction(target, data)
