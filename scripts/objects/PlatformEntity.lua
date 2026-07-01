@@ -79,53 +79,24 @@ function PlatformEntity:getLocalRect(x_offset, y_offset, width, height)
         height or self.hitbox[4]
 end
 
-function PlatformEntity:withOwnerPosition(x, y, callback)
-    local old_x, old_y = self.owner.x, self.owner.y
-    if x then
-        self.owner.x = x
-    end
-    if y then
-        self.owner.y = y
-    end
-    Object.uncache(self.owner)
-
-    local results = {callback()}
-
-    self.owner.x = old_x
-    self.owner.y = old_y
-    Object.uncache(self.owner)
-
-    return unpack(results)
-end
-
 function PlatformEntity:getColliderAt(x, y, x_offset, y_offset, width, height)
-    local left, top, hit_width, hit_height = self:getLocalRect(x_offset, y_offset, width, height)
-    return Hitbox(self.owner, left, top, hit_width, hit_height)
+    local left, top, hit_width, hit_height = self:getWorldBoundsAt(x, y, x_offset, y_offset, width, height)
+    return Hitbox(self.owner.parent or Game.world, left, top, hit_width, hit_height)
 end
 
 function PlatformEntity:getWorldBoundsAt(x, y, x_offset, y_offset, width, height)
-    return self:withOwnerPosition(x, y, function()
-        local left, top, hit_width, hit_height = self:getLocalRect(x_offset, y_offset, width, height)
-        local transform = self.owner:getFullTransform()
-        local x1, y1 = transform:transformPoint(left, top)
-        local x2, y2 = transform:transformPoint(left + hit_width, top)
-        local x3, y3 = transform:transformPoint(left + hit_width, top + hit_height)
-        local x4, y4 = transform:transformPoint(left, top + hit_height)
-        local min_x = math.min(x1, x2, x3, x4)
-        local max_x = math.max(x1, x2, x3, x4)
-        local min_y = math.min(y1, y2, y3, y4)
-        local max_y = math.max(y1, y2, y3, y4)
-        return min_x, min_y, max_x - min_x, max_y - min_y, max_x, max_y
-    end)
+    local left, top, hit_width, hit_height = self:getLocalRect(x_offset, y_offset, width, height)
+    local origin_x, origin_y = self.owner:getOriginExact()
+    local world_left = x - origin_x + left
+    local world_top = y - origin_y + top
+    return world_left, world_top, hit_width, hit_height, world_left + hit_width, world_top + hit_height
 end
 
 function PlatformEntity:collidesWithEvent(event, x, y, x_offset, y_offset, width, height)
     if not (event and event.collider) then
         return false
     end
-    return self:withOwnerPosition(x, y, function()
-        return self:getColliderAt(x, y, x_offset, y_offset, width, height):collidesWith(event.collider)
-    end)
+    return self:getColliderAt(x, y, x_offset, y_offset, width, height):collidesWith(event.collider)
 end
 
 function PlatformEntity:getEventTop(event)
@@ -383,10 +354,11 @@ function PlatformEntity:moveX(amount)
         if block then
             self.wallhitspd = self.hspeed
             local left, _, _, _, right = self:getWorldBoundsAt(self.owner.x, self.owner.y)
+            local rounded_x = MathUtils.round(self.owner.x)
             if step > 0 then
-                self.owner.x = self.owner.x + ((self:getEventLeft(block) - 2) - right)
+                self.owner.x = self:getEventLeft(block) - (right - rounded_x) - 2
             else
-                self.owner.x = self.owner.x + ((self:getEventRight(block) + 2) - left)
+                self.owner.x = self:getEventRight(block) + (rounded_x - left) + 2
             end
             Object.uncache(self.owner)
             self.hspeed = 0
@@ -397,6 +369,61 @@ function PlatformEntity:moveX(amount)
         Object.uncache(self.owner)
         remaining = remaining - math.abs(step)
     end
+end
+
+function PlatformEntity:resolveHorizontalBlocks(move_amount)
+    if not self.wallcollision then
+        return
+    end
+
+    local checks = math.ceil(math.abs(move_amount or self.hspeed or 0))
+    local distcheck = 2
+    for _ = 1, checks do
+        local wall = self:findBlockAt(self.owner.x - distcheck, self.owner.y)
+        if wall and self.hspeed <= 0 then
+            if self.hspeed < 0 then
+                self.wallhitspd = self.hspeed
+                self.hspeed = 0
+            end
+            local left = self:getWorldBoundsAt(self.owner.x, self.owner.y)
+            if self.owner.x > self:getEventRight(wall) then
+                self.owner.x = self:getEventRight(wall) + (MathUtils.round(self.owner.x) - left) + 2
+                Object.uncache(self.owner)
+            end
+        end
+
+        wall = self:findBlockAt(self.owner.x + distcheck, self.owner.y)
+        if wall and self.hspeed >= 0 then
+            if self.hspeed > 0 then
+                self.wallhitspd = self.hspeed
+                self.hspeed = 0
+            end
+            local _, _, _, _, right = self:getWorldBoundsAt(self.owner.x, self.owner.y)
+            if self.owner.x < self:getEventLeft(wall) then
+                self.owner.x = self:getEventLeft(wall) - (right - MathUtils.round(self.owner.x)) - 2
+                Object.uncache(self.owner)
+            end
+        end
+
+        distcheck = distcheck + 1
+    end
+end
+
+function PlatformEntity:resolveCeilingBlock(move_amount)
+    if not self.wallcollision or (self.vspeed or 0) >= 0 then
+        return false
+    end
+
+    local check_y = self.owner.y - math.abs(move_amount or self.vspeed or 0)
+    local block = self:findBlockAt(self.owner.x, check_y)
+    if block and not (block.is_barrier and self.ignore_barriers) then
+        self.vspeed = 0
+        self.owner.y = self.owner.y + (2 * DTMULT)
+        Object.uncache(self.owner)
+        return true
+    end
+
+    return false
 end
 
 function PlatformEntity:landOn(ground)
@@ -451,14 +478,6 @@ function PlatformEntity:moveY(amount)
             local ground_top = ground and self:getGroundTopAt(ground, self.owner.x, next_y)
             if ground and ground_top and old_bottom <= ground_top + math.abs(step) then
                 self:landOn(ground)
-                return
-            end
-        else
-            local block = self.wallcollision and self:findBlockAt(self.owner.x, next_y) or nil
-            if block then
-                self.owner.y = self.owner.y + 2
-                Object.uncache(self.owner)
-                self.vspeed = 0
                 return
             end
         end
@@ -659,6 +678,8 @@ function PlatformEntity:updatePhysics()
     self.landspd = 0
     self.wallhitspd = 0
 
+    local move_x = self.hspeed * DTMULT
+    self:resolveHorizontalBlocks(move_x)
     self:moveX(self.hspeed * DTMULT)
 
     local ground_extra = MathUtils.clamp((previous_ground and (previous_ground.dif_y or 0) or 0) * 4, 4, 18)
@@ -673,7 +694,10 @@ function PlatformEntity:updatePhysics()
     end
 
     if not self.grounded then
-        self:moveY(self.vspeed * DTMULT)
+        local move_y = self.vspeed * DTMULT
+        if not self:resolveCeilingBlock(move_y) then
+            self:moveY(move_y)
+        end
     end
 
     self:applyGroundEffects()

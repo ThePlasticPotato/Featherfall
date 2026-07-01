@@ -105,6 +105,7 @@ function Featherfall:init()
         platform_fallcue = "platform/fall_cue",
         platform_fall_cue = "platform/fall_cue",
         platform_floortex_floor = "platform/floortex_floor",
+        platform_floortex_auto = "platform/floortex_auto",
         platform_floortex_front = "platform/floortex_front",
         platform_floortex_back = "platform/floortex_back",
         platform_floortex_yplat = "platform/floortex_yplat",
