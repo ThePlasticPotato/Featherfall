@@ -684,7 +684,7 @@ function PlatformSlashpusher:onPlatformAttack(hitbox)
         Assets.stopSound(Featherfall.sounds.attack_1)
         Assets.stopSound(Featherfall.sounds.attack_2)
         Assets.stopSound(Featherfall.sounds.attack_3)
-        hitbox:doHit()
+        hitbox:doHit(6)
         self.bulb_hitstop = 6
     end
 

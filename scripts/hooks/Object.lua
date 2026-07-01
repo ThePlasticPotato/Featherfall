@@ -38,6 +38,9 @@ function Object:update()
     if Featherfall and Featherfall.updatePlatformPauseCoyote then
         Featherfall:updatePlatformPauseCoyote()
     end
+    if Featherfall and Featherfall.updatePlatformHitstop then
+        Featherfall:updatePlatformHitstop()
+    end
 
     if self.camera then
         self.camera:update()

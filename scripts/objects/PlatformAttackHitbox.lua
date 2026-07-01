@@ -80,6 +80,16 @@ function PlatformAttackHitbox:getOwnerState()
     return self.owner and self.owner.platform_state
 end
 
+function PlatformAttackHitbox:getDefaultHitstop()
+    local state = self:getOwnerState()
+    local entity = state and state.entity
+    local grounded = entity and entity.grounded
+    if self.hitbox_index == 2 then
+        return grounded and 7 or 8
+    end
+    return grounded and 4 or 3
+end
+
 function PlatformAttackHitbox:getAnimationMetadata(animation)
     if animation and animation.metadata then
         return animation.metadata
@@ -198,8 +208,14 @@ function PlatformAttackHitbox:checkAttackables()
     end
 end
 
-function PlatformAttackHitbox:doHit()
+function PlatformAttackHitbox:doHit(hitstop)
     self.lifetime = math.min(self.lifetime, 1)
+    if hitstop == nil then
+        hitstop = self:getDefaultHitstop()
+    end
+    if hitstop and hitstop > 0 and Featherfall and Featherfall.requestPlatformHitstop then
+        Featherfall:requestPlatformHitstop(hitstop)
+    end
 end
 
 function PlatformAttackHitbox:drawDebug()

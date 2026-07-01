@@ -24,6 +24,7 @@ local Featherfall = {
     platform_camera = nil,
     platform_dialogue = nil,
     platform_pause_coyote = 0,
+    platform_hitstop = 0,
 }
 
 _G.Featherfall = Featherfall
@@ -199,6 +200,7 @@ function Featherfall:resetControllerState()
     self.pending_platform = false
     self.platforming = false
     self.platform_pause_coyote = 0
+    self.platform_hitstop = 0
     self.dynamic_platforms = {}
     self:resetPlatformCamera()
     self:clearPetalWings(true)
@@ -510,7 +512,7 @@ function Featherfall:isTransitioning()
     return (self.transition_timer - offset) > 0
 end
 
-function Featherfall:isPlatformPaused()
+function Featherfall:isPlatformPauseRequested()
     if Game.world and Game.world.state == "MENU" and Game.world.menu then
         return true
     end
@@ -521,12 +523,41 @@ function Featherfall:isPlatformPaused()
     return player_state and player_state.targetmode or false
 end
 
+function Featherfall:isPlatformPaused()
+    if self:isPlatformPauseRequested() then
+        return true
+    end
+    if (self.platform_hitstop or 0) > 0 then
+        return true
+    end
+    return false
+end
+
 function Featherfall:queuePlatformPauseCoyote(frames)
     self.platform_pause_coyote = math.max(self.platform_pause_coyote or 0, frames or 1)
 end
 
 function Featherfall:updatePlatformPauseCoyote()
     self.platform_pause_coyote = MathUtils.approach(self.platform_pause_coyote or 0, 0, DTMULT)
+end
+
+function Featherfall:requestPlatformHitstop(frames)
+    frames = tonumber(frames) or 0
+    if frames <= 0 then
+        return
+    end
+    self.platform_hitstop = math.max(self.platform_hitstop or 0, frames)
+end
+
+function Featherfall:clearPlatformHitstop()
+    self.platform_hitstop = 0
+end
+
+function Featherfall:updatePlatformHitstop()
+    if self:isPlatformPauseRequested() then
+        return
+    end
+    self.platform_hitstop = MathUtils.approach(self.platform_hitstop or 0, 0, DTMULT)
 end
 
 function Featherfall:getActionTargets()
