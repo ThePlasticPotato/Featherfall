@@ -48,6 +48,9 @@ end
 
 function PlatformRipple:update()
     super.update(self)
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
 
     self.life = MathUtils.approach(self.life, 0, DTMULT)
     self.x = self.x + (self.hsp * DTMULT)

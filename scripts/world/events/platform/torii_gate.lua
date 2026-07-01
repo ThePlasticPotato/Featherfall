@@ -125,6 +125,9 @@ end
 
 function ToriiAfterimage:update()
     afterimageSuper.update(self)
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
     self.alpha = self.alpha - (0.05 * DTMULT)
     if self.alpha <= 0 then
         self:remove()
@@ -260,6 +263,9 @@ function PlatformToriiGate:update()
     super.update(self)
     self:ensureBackObject()
     self:updateLayering()
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
 
     if self.just_initiated_timer > 0 then
         self.just_initiated_timer = self.just_initiated_timer - DTMULT

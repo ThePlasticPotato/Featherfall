@@ -525,6 +525,10 @@ function Featherfall:queuePlatformPauseCoyote(frames)
     self.platform_pause_coyote = math.max(self.platform_pause_coyote or 0, frames or 1)
 end
 
+function Featherfall:updatePlatformPauseCoyote()
+    self.platform_pause_coyote = MathUtils.approach(self.platform_pause_coyote or 0, 0, DTMULT)
+end
+
 function Featherfall:getActionTargets()
     local map = Game.world and Game.world.map
     if not map then
@@ -786,7 +790,6 @@ function Featherfall:updatePlatformMotionForPhysics()
         self:snapEntitiesStandingOnPlatform(platform)
     end
     self.platform_motion_phase = false
-    self.platform_pause_coyote = MathUtils.approach(self.platform_pause_coyote or 0, 0, DTMULT)
 end
 
 function Featherfall:snapEntitiesStandingOnPlatform(platform)
@@ -913,6 +916,12 @@ function Featherfall:updatePlatformCamera()
     local state = self:getPlatformCameraState(camera)
     local camera_x = state.raw_x or state.x
     local camera_y = state.raw_y or state.y
+    if self:isPlatformPaused() then
+        camera.x = camera_x
+        camera.y = camera_y
+        camera:keepInBounds()
+        return
+    end
     local scroll_x = camera_x
     local lerpmax = state.lerptimemax or self.constants.camera_lerptime_max or 15
     state.lerptimemax = lerpmax
@@ -1010,10 +1019,6 @@ function Featherfall:updatePlatformCamera()
 
     local goal_x = tx + (state.nudgex or 0)
     local goal_y = ty + (state.nudgey or 0)
-    if self:isPlatformPaused() then
-        goal_x = tx
-        goal_y = ty
-    end
 
     local min_x, min_y = camera:getMinPosition()
     local max_x, max_y = camera:getMaxPosition()

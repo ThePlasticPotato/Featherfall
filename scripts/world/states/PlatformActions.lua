@@ -397,6 +397,9 @@ function PlatformActions:setCooldown(text, frames)
 end
 
 function PlatformActions:updateCooldown()
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
     self.cooldown_timer = MathUtils.approach(self.cooldown_timer, 0, DTMULT)
     if self.cooldown_timer <= 0 then
         self.cooldown_text = nil
@@ -517,6 +520,9 @@ end
 function PlatformActions:updateActive(player)
     if not self.active then
         return false
+    end
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return true
     end
 
     if self.data and self.data.update then

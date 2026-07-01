@@ -118,15 +118,22 @@ function PlatformActionTarget:update()
     self:updateActionPlatformState()
     self.cx = self.target_x or (self.x + ((self.width or 0) / 2))
     self.cy = self.target_y or (self.y + ((self.height or 0) / 2))
-    if self.active and not self.blocked then
-        self.activetimer = self.activetimer + DTMULT
-    else
-        self.activetimer = 0
+    local paused = Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused()
+    if not paused then
+        if self.active and not self.blocked then
+            self.activetimer = self.activetimer + DTMULT
+        else
+            self.activetimer = 0
+        end
     end
-    self.selected_timer = MathUtils.approach(self.selected_timer, 0, DTMULT)
     self.last_hovered = self.hovered
     self.hoverlerp = MathUtils.approach(self.hoverlerp, self.hovered and 1 or 0, 0.25 * DTMULT)
-    self:updateRipple()
+    if not paused then
+        self.selected_timer = MathUtils.approach(self.selected_timer, 0, DTMULT)
+        self:updateRipple()
+    elseif self.ripple and self.ripple.parent then
+        self.ripple.visible = false
+    end
 end
 
 function PlatformActionTarget:getActionPlatformState()

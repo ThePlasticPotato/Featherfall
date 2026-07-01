@@ -17,6 +17,9 @@ end
 
 function PlatformAttackable:update()
     super.update(self)
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
 
     local was_cooling_down = self.hit_cooldown > 0
     self.hit_cooldown = MathUtils.approach(self.hit_cooldown, 0, DTMULT)

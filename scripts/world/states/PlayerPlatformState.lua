@@ -158,6 +158,7 @@ function PlayerPlatformState:init(player)
     self.act_buffer = false
     self.targetmode = false
     self.menu_pause_active = false
+    self.platform_pause_active = false
     self.targetmode_sprite_pause = nil
     self.act_targets = {}
     self.targetindex = -1
@@ -799,6 +800,24 @@ function PlayerPlatformState:updateWorldMenuPause()
         return true
     elseif self.menu_pause_active then
         self.menu_pause_active = false
+        self:setTargetModeSpritePaused(false)
+    end
+    return false
+end
+
+function PlayerPlatformState:updatePlatformPause()
+    local paused = Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused()
+    if paused then
+        self.platform_pause_active = true
+        self:setTargetModeSpritePaused(true)
+        self.attack_press_timer = 0
+        self.attackbuffer = 0
+        self.attack_buffered = false
+        self.key_left = false
+        self.key_right = false
+        return true
+    elseif self.platform_pause_active then
+        self.platform_pause_active = false
         self:setTargetModeSpritePaused(false)
     end
     return false
@@ -1737,8 +1756,6 @@ function PlayerPlatformState:onEnter(old_state, settings)
 end
 
 function PlayerPlatformState:onUpdate()
-    self.timer = self.timer + DTMULT
-    self.exit_cooldown = MathUtils.approach(self.exit_cooldown, 0, DTMULT)
     self:updateTargetModeOutline()
     if not (Featherfall.transition_prop and Featherfall.transition_prop.parent) then
         self.player.sprite.visible = true
@@ -1761,6 +1778,11 @@ function PlayerPlatformState:onUpdate()
         self.attack_press_timer = MathUtils.approach(self.attack_press_timer, 0, DTMULT)
         return
     end
+    if self:updatePlatformPause() then
+        return
+    end
+    self.timer = self.timer + DTMULT
+    self.exit_cooldown = MathUtils.approach(self.exit_cooldown, 0, DTMULT)
     self.actions:updateCooldown()
     if self.actions:updateActive(self.player) then
         self.attack_press_timer = MathUtils.approach(self.attack_press_timer, 0, DTMULT)
@@ -1931,6 +1953,7 @@ function PlayerPlatformState:onExit(next_state)
         self:clearTargetModeTargets()
     end
     self.menu_pause_active = false
+    self.platform_pause_active = false
     self:setTargetModeSpritePaused(false)
     self.player:removeFX("platform_targetmode_outline")
     self.targetmode_highlighted = false

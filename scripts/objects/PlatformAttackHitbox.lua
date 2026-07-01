@@ -172,6 +172,10 @@ function PlatformAttackHitbox:update()
     self.y = self.owner.y
     Object.uncache(self)
 
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
+
     self:checkAttackables()
 
     self.lifetime = self.lifetime - DTMULT

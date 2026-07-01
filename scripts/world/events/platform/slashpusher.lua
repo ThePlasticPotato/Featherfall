@@ -87,6 +87,9 @@ end
 
 function SlashpusherAfterimage:update()
     afterimageSuper.update(self)
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
     self.x = self.x + (gmLengthdirX(self.speed, self.direction) * DTMULT)
     self.y = self.y + (gmLengthdirY(self.speed, self.direction) * DTMULT)
     self.grow = self.grow + (0.2 * DTMULT)
@@ -140,6 +143,9 @@ end
 
 function SlashpusherPetalBurst:update()
     petalBurstSuper.update(self)
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
     for index = #self.particles, 1, -1 do
         local particle = self.particles[index]
         particle.timer = particle.timer + DTMULT
@@ -342,6 +348,9 @@ function PlatformSlashpusher:updatePendulum()
     if not (self.pendulum_angle ~= 0 and self.pendulum_freq ~= 0 and self.leaves and self.leaves.parent) then
         return false
     end
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return false
+    end
     local lx, ly = self.leaves:getAnchorPosition()
     local sx = self.start_x or self.x
     local sy = self.start_y or self.y
@@ -367,9 +376,12 @@ function PlatformSlashpusher:update()
     super.update(self)
     self:resolveAnchor()
     self.cx, self.cy = self:getBulbPosition()
-    self.selected_timer = MathUtils.approach(self.selected_timer or 0, 0, DTMULT)
     self.last_hovered = self.hovered
     self.hoverlerp = MathUtils.approach(self.hoverlerp or 0, self.hovered and 1 or 0, 0.25 * DTMULT)
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
+    self.selected_timer = MathUtils.approach(self.selected_timer or 0, 0, DTMULT)
 
     if self.disabled then
         self.disabled_lerp = MathUtils.approach(self.disabled_lerp, 1, 0.1 * DTMULT)

@@ -63,6 +63,9 @@ function PlatformRudeBusterBeam:hitTarget()
 end
 
 function PlatformRudeBusterBeam:update()
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
     self.alpha = MathUtils.approach(self.alpha, 1, 0.25 * DTMULT)
     local tx, ty = self:getTargetPosition()
 

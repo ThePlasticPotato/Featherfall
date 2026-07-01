@@ -112,6 +112,9 @@ function PetalWing:update()
         self.y = target.y
         self.layer = target.layer or self.layer
     end
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
     if self.disperse_when_platform and not self.timerstart
         and Featherfall and Game.world and Game.world.player
         and Game.world.player.state == Featherfall.state

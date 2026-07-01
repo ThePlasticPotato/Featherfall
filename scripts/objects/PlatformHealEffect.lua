@@ -73,6 +73,9 @@ end
 
 function PlatformHealEffect:update()
     super.update(self)
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
     self.timer = self.timer + DTMULT
 
     if self.target and self.target.parent then

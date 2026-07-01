@@ -124,6 +124,9 @@ end
 function PlatformStatue:update()
     super.update(self)
     self:updatePlatformTransform()
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
     self.wings_timer = MathUtils.approach(self.wings_timer, 0, DTMULT)
 
     local max_frame = 0

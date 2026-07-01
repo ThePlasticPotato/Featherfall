@@ -36,6 +36,9 @@ end
 
 function PlatformSlashpusherAnchor:update()
     super.update(self)
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
 
     if self.flower_rotate_speed > 0 and self.flower and self.flower.parent then
         self.flower.angle = (self.flower.angle or 0) + (self.flower_rotate_speed * DTMULT)

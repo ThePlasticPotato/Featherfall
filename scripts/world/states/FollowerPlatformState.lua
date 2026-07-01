@@ -1209,7 +1209,8 @@ end
 function FollowerPlatformState:updateTargetModePause(player)
     local targetmode = self:isTargetModePaused(player)
     local menu_paused = self:isWorldMenuPaused()
-    local paused = targetmode or menu_paused
+    local platform_paused = Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused()
+    local paused = targetmode or menu_paused or platform_paused
     self.menu_pause_active = menu_paused
     self:setTargetModeSpritePaused(paused)
     self:updateImportantBlend(targetmode or (self.actions and self.actions.active))

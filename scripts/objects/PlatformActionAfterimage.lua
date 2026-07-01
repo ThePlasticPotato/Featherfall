@@ -62,6 +62,9 @@ end
 
 function PlatformActionAfterimage:update()
     super.update(self)
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
     if self.world_space then
         self.x = self.x + ((self.hspeed or 0) * DTMULT)
     end

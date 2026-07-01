@@ -45,6 +45,9 @@ end
 
 function PlatformDust:update()
     super.update(self)
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
     self.timer = self.timer + DTMULT
     if self.gravity_direction and self.gravity ~= 0 then
         self.hspeed = self.hspeed + (math.cos(math.rad(self.gravity_direction)) * self.gravity * DTMULT)

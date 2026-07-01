@@ -484,6 +484,9 @@ function Jarona:update()
         self:remove()
         return
     end
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
 
     self.timer = self.timer + DTMULT
     self:updateEffects()

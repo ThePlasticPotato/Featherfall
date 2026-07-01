@@ -51,6 +51,9 @@ end
 
 function PlatformMeter:update()
     super.update(self)
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        return
+    end
 
     if self.remove_when_done then
         self.value = MathUtils.approach(self.value or 0, 0, DTMULT)
