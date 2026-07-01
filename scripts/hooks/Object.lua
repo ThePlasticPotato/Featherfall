@@ -1,7 +1,7 @@
 ---@class Object : Object
 local Object, super = HookSystem.hookScript(Object)
 
-local function isPlatformWorldObject(object)
+local function shouldUsePlatformDrawTransform(object)
     if not (Featherfall and Featherfall.isPlatformModeActive and Featherfall:isPlatformModeActive()) then
         return false
     end
@@ -42,8 +42,11 @@ function Object:update()
 end
 
 function Object:preDraw(dont_transform)
-    if not dont_transform and isPlatformWorldObject(self) then
+    if not dont_transform and shouldUsePlatformDrawTransform(self) then
         local transform = love.graphics.getTransformRef()
+        -- Deltarune platforming does not apply Kristal's inherited per-object
+        -- pixel snap. Keep platform objects in the same subpixel reference frame;
+        -- object-specific DR rounding should happen in the object/camera logic.
         self:applyTransformTo(transform)
         love.graphics.replaceTransform(transform)
 

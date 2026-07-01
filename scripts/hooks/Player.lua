@@ -2,7 +2,7 @@
 ---@field platform_state PlayerPlatformState
 local Player, super = HookSystem.hookScript(Player)
 
-local PlayerPlatformState = modRequire("libraries.featherfall.scripts.world.states.PlayerPlatformState")
+local PlayerPlatformState = libRequire("featherfall", "scripts.world.states.PlayerPlatformState")
 
 function Player:init(chara, x, y)
     super.init(self, chara, x, y)
@@ -27,6 +27,13 @@ function Player:requestPlatformAction(target, data)
         return self.platform_state:requestAction(target, data)
     end
     return false
+end
+
+function Player:draw()
+    super.draw(self)
+    if self:isPlatforming() and self.platform_state and self.platform_state.drawHoverUI then
+        self.platform_state:drawHoverUI()
+    end
 end
 
 return Player

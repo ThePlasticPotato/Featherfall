@@ -570,10 +570,14 @@ function PlatformEntity:moveY(amount)
 end
 
 function PlatformEntity:applyGroundEffects()
+    self.last_ground_effect_dx = 0
+    self.last_ground_effect_dy = 0
+    self.last_ground_effect_ground = nil
     if not (self.grounded and self.ground) then
         return
     end
 
+    local start_x, start_y = self.owner.x, self.owner.y
     if self.ground.quicksand and self.ground.quicksand ~= 0 then
         self.owner.y = self.owner.y + self.ground.quicksand * DTMULT
         Object.uncache(self.owner)
@@ -585,6 +589,12 @@ function PlatformEntity:applyGroundEffects()
             self.owner.x = self.owner.x + change
             Object.uncache(self.owner)
         end
+    end
+
+    self.last_ground_effect_dx = self.owner.x - start_x
+    self.last_ground_effect_dy = self.owner.y - start_y
+    if self.last_ground_effect_dx ~= 0 or self.last_ground_effect_dy ~= 0 then
+        self.last_ground_effect_ground = self.ground
     end
 end
 

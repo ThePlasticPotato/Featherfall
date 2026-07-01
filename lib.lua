@@ -22,6 +22,7 @@ local Featherfall = {
     action_gradients = {},
     action_labels = {},
     platform_camera = nil,
+    platform_dialogue = nil,
 }
 
 _G.Featherfall = Featherfall
@@ -95,6 +96,30 @@ Featherfall.sounds = {
     jump_launch = "smallswing",
 }
 
+local function clamp01(value)
+    return MathUtils.clamp(value, 0, 1)
+end
+
+local function inverseLerp(from, to, value)
+    if from == to then
+        return 0
+    end
+    return (value - from) / (to - from)
+end
+
+local function easeInOutSine(value)
+    value = clamp01(value)
+    return -(math.cos(math.pi * value) - 1) / 2
+end
+
+local function easeInOutQuad(value)
+    value = clamp01(value)
+    if value < 0.5 then
+        return 2 * value * value
+    end
+    return 1 - (((-2 * value) + 2) ^ 2) / 2
+end
+
 function Featherfall:init()
     local aliases = {
         platform_statue = "platform/statue",
@@ -105,8 +130,15 @@ function Featherfall:init()
         platform_checkpoint = "platform/checkpoint",
         platform_followercue = "platform/followercue",
         platform_action_target = "platform/action_target",
+        platform_talk = "platform/talk",
+        platform_text_at_bottom_zone = "platform/text_at_bottom_zone",
         platform_fallcue = "platform/fall_cue",
         platform_fall_cue = "platform/fall_cue",
+        platform_cam_steadyzone = "platform/cam_steadyzone",
+        platform_cam_clampzone = "platform/cam_clampzone",
+        platform_cam_nudgezone = "platform/cam_nudgezone",
+        platform_cam_autoscroll = "platform/cam_autoscroll",
+        platform_cam_extra_target = "platform/cam_extra_target",
         platform_floortex_floor = "platform/floortex_floor",
         platform_floortex_auto = "platform/floortex_auto",
         platform_floortex_front = "platform/floortex_front",
@@ -158,6 +190,7 @@ function Featherfall:resetControllerState()
         self.action_ui:remove()
     end
     self.action_ui = nil
+    self:closePlatformText()
 end
 
 function Featherfall:getConfig(key, default)
@@ -478,6 +511,88 @@ function Featherfall:getActionTargets()
     return targets
 end
 
+function Featherfall:closePlatformText()
+    if self.platform_dialogue and self.platform_dialogue.parent then
+        self.platform_dialogue:remove()
+    end
+    self.platform_dialogue = nil
+end
+
+function Featherfall:showPlatformText(text, options)
+    if not Game.world then
+        return
+    end
+
+    self:closePlatformText()
+    local dialogue = PlatformDialogueBox(text, options or {})
+    self.platform_dialogue = Game.world:spawnObject(dialogue, dialogue.layer or WORLD_LAYERS["textbox"])
+    return self.platform_dialogue
+end
+
+function Featherfall:getPlatformCameraEvents(flag)
+    local map = Game.world and Game.world.map
+    if not map then
+        return {}
+    end
+
+    local events = {}
+    for _, event in ipairs(map.events or {}) do
+        if event[flag] then
+            table.insert(events, event)
+        end
+    end
+    return events
+end
+
+function Featherfall:isPointInsidePlatformEvent(event, x, y)
+    if not event then
+        return false
+    end
+    local left = math.min(event.x or 0, (event.x or 0) + (event.width or 0))
+    local right = math.max(event.x or 0, (event.x or 0) + (event.width or 0))
+    local top = math.min(event.y or 0, (event.y or 0) + (event.height or 0))
+    local bottom = math.max(event.y or 0, (event.y or 0) + (event.height or 0))
+    return x >= left and x <= right and y >= top and y <= bottom
+end
+
+function Featherfall:getPlatformCameraZone(flag, x, y)
+    for _, event in ipairs(self:getPlatformCameraEvents(flag)) do
+        if self:isPointInsidePlatformEvent(event, x, y) then
+            return event
+        end
+    end
+end
+
+function Featherfall:getPlatformCameraEventCenter(event)
+    return (event.x or 0) + ((event.width or 0) / 2), (event.y or 0) + ((event.height or 0) / 2)
+end
+
+function Featherfall:getPlatformCameraEventModeLerp(event, x, y)
+    local mode = event and event.mode or "Constant"
+    if mode == "Gradual - Left" then
+        return 1 - clamp01(inverseLerp(event.x, event.x + event.width, x))
+    elseif mode == "Gradual - Right" then
+        return clamp01(inverseLerp(event.x, event.x + event.width, x))
+    elseif mode == "Gradual - Up" then
+        return 1 - clamp01(inverseLerp(event.y, event.y + event.height, y))
+    elseif mode == "Gradual - Down" then
+        return clamp01(inverseLerp(event.y, event.y + event.height, y))
+    end
+    return 1
+end
+
+function Featherfall:getPlatformCameraClampZonePair(zone)
+    if not (zone and zone.gradual_extflag and zone.gradual_extflag ~= "") then
+        return nil
+    end
+
+    for _, other in ipairs(self:getPlatformCameraEvents("platform_cam_clampzone")) do
+        if other ~= zone and other.extflag == zone.gradual_extflag then
+            return other
+        end
+    end
+end
+
 function Featherfall:addDynamicPlatform(platform)
     self.dynamic_platforms = self.dynamic_platforms or {}
     table.insert(self.dynamic_platforms, platform)
@@ -699,15 +814,26 @@ function Featherfall:getPlatformCameraState(camera)
             zone_lerpstrength = self.constants.camera_zone_lerpstrength or 1,
             nudgex = 0,
             nudgey = 0,
+            nudgerate = 999,
+            lerpinit = false,
+            last_ideal_y = 0,
+            last_ideal_y_real = 0,
+            y_stick = 1,
+            y_stick_lerp = 1,
+            wants_ideal_y = 0,
             shakex = 0,
             shakey = 0,
             just_started = true,
             oldgoalx = -999,
             oldgoaly = -999,
+            zone = nil,
             min_x = -1,
             max_x = -1,
             scroll_mode = false,
             autoscroll_speed = 3.46,
+            extra_targets = {},
+            extra_target_markers = {},
+            extra_target_lerp = 1,
         }
     end
     return self.platform_camera
@@ -737,11 +863,195 @@ function Featherfall:updatePlatformCamera()
     state.lerptime_h = math.min((state.lerptime_h or lerpmax) + ((state.zone_lerpstrength or 1) * DTMULT), lerpmax)
     state.lerptime_v = math.min((state.lerptime_v or lerpmax) + ((state.zone_lerpstrength or 1) * DTMULT), lerpmax)
 
-    local goal_x = player.x + (state.nudgex or 0)
-    local goal_y = player.y + (state.nudgey or 0)
+    local tx = player.x
+    local ty = player.y
+    local player_state = player.platform_state
+    local entity = player_state and player_state.entity
+    local grounded = entity and entity.grounded
+    local steady_zone = self:getPlatformCameraZone("platform_cam_steadyzone", player.x, player.y)
+    if grounded then
+        if steady_zone then
+            state.wants_ideal_y = 1
+            state.y_stick = 2
+            state.y_stick_lerp = 1
+        else
+            state.wants_ideal_y = MathUtils.approach(state.wants_ideal_y or 0, 0, 0.05 * DTMULT)
+        end
+    elseif (state.wants_ideal_y or 0) < 1 then
+        state.wants_ideal_y = MathUtils.approach(state.wants_ideal_y or 0, 0, 0.05 * DTMULT)
+    end
+
+    local _, yscale = self:getFloortexTransition()
+    if yscale ~= 1 or not state.lerpinit then
+        state.last_ideal_y_real = player.y
+        state.lerpinit = true
+        state.last_ideal_y = player.y
+        state.y_stick = 2
+        state.y_stick_lerp = 1
+    end
+    if (state.wants_ideal_y or 0) > 0 then
+        if grounded then
+            state.last_ideal_y_real = player.y
+            if state.y_stick ~= 2 then
+                state.y_stick_lerp = 0
+                state.y_stick = 2
+            end
+        elseif state.y_stick == 1 then
+            state.last_ideal_y_real = player.y
+        else
+            state.y_stick = 0
+            if (state.last_ideal_y or player.y) < (player.y - 20) or (state.last_ideal_y or player.y) > (player.y + 160) then
+                state.y_stick = 1
+                state.y_stick_lerp = 0
+                state.last_ideal_y_real = player.y
+            end
+            if player_state and player_state.jump_boost then
+                state.y_stick = 1
+                state.y_stick_lerp = 0
+                state.last_ideal_y_real = player.y
+            end
+        end
+        state.last_ideal_y = MathUtils.lerp(state.last_ideal_y or player.y, state.last_ideal_y_real or player.y, easeInOutQuad(state.y_stick_lerp or 0))
+        state.y_stick_lerp = (state.y_stick_lerp or 0) + (0.07 * DTMULT)
+        ty = MathUtils.lerp(ty, state.last_ideal_y, state.wants_ideal_y or 0)
+    end
+
+    state.extra_target_lerp = math.min((state.extra_target_lerp or 1) + (0.05 * DTMULT), 1)
+    state.extra_target_markers = state.extra_target_markers or {}
+    local active_extra_targets = {}
+    for _, target in ipairs(self:getPlatformCameraEvents("platform_cam_extra_target")) do
+        active_extra_targets[target] = true
+        if not state.extra_target_markers[target] then
+            state.extra_target_markers[target] = {
+                target = target,
+                lerp = 0,
+            }
+        end
+    end
+
+    local num = 1
+    for target, marker in pairs(state.extra_target_markers) do
+        if active_extra_targets[target] and target.parent then
+            marker.lerp = MathUtils.approach(marker.lerp or 0, 1, 0.05 * DTMULT)
+        else
+            marker.lerp = MathUtils.approach(marker.lerp or 0, 0, 0.05 * DTMULT)
+            if marker.lerp <= 0 then
+                state.extra_target_markers[target] = nil
+            end
+        end
+
+        if state.extra_target_markers[target] then
+            local marker_x, marker_y = self:getPlatformCameraEventCenter(target)
+            local falloff = clamp01(((300 - MathUtils.dist(player.x, player.y, marker_x, marker_y)) + 100) / 300) * 0.75
+            falloff = falloff * (easeInOutSine(marker.lerp or 0) * (state.extra_target_lerp or 1))
+            tx = tx + (marker_x * falloff)
+            ty = ty + (marker_y * falloff)
+            num = num + falloff
+        end
+    end
+    tx = tx / num
+    ty = ty / num
+
+    local goal_x = tx + (state.nudgex or 0)
+    local goal_y = ty + (state.nudgey or 0)
+    if self:isPlatformPaused() then
+        goal_x = tx
+        goal_y = ty
+    end
 
     local min_x, min_y = camera:getMinPosition()
     local max_x, max_y = camera:getMaxPosition()
+    local target_x, target_y = player.x, player.y
+    local clamp_zone = self:getPlatformCameraZone("platform_cam_clampzone", target_x, target_y)
+    if clamp_zone then
+        local half_w = (camera.width / camera.zoom_x) / 2
+        local half_h = (camera.height / camera.zoom_y) / 2
+        local lclamp = min_x - half_w
+        local rclamp = max_x - half_w
+        local uclamp = min_y - half_h
+        local dclamp = max_y - half_h
+        if clamp_zone.xmin ~= -4 then
+            lclamp = clamp_zone.xmin
+        end
+        if clamp_zone.xmax ~= -4 then
+            rclamp = clamp_zone.xmax
+        end
+        if clamp_zone.ymin ~= -4 then
+            uclamp = clamp_zone.ymin
+        end
+        if clamp_zone.ymax ~= -4 then
+            dclamp = clamp_zone.ymax
+        end
+
+        if clamp_zone.mode ~= "Constant" then
+            local pair = self:getPlatformCameraClampZonePair(clamp_zone)
+            if pair then
+                local zone_lerp = self:getPlatformCameraEventModeLerp(clamp_zone, target_x, target_y)
+                if clamp_zone.xmin ~= -4 and pair.xmin ~= -4 then
+                    lclamp = MathUtils.lerp(clamp_zone.xmin, pair.xmin, zone_lerp)
+                end
+                if clamp_zone.xmax ~= -4 and pair.xmax ~= -4 then
+                    rclamp = MathUtils.lerp(clamp_zone.xmax, pair.xmax, zone_lerp)
+                end
+                if clamp_zone.ymin ~= -4 and pair.ymin ~= -4 then
+                    uclamp = MathUtils.lerp(clamp_zone.ymin, pair.ymin, zone_lerp)
+                end
+                if clamp_zone.ymax ~= -4 and pair.ymax ~= -4 then
+                    dclamp = MathUtils.lerp(clamp_zone.ymax, pair.ymax, zone_lerp)
+                end
+            end
+        end
+
+        goal_x = MathUtils.clamp(goal_x, lclamp + half_w, rclamp + half_w)
+        goal_y = MathUtils.clamp(goal_y, uclamp + half_h, dclamp + half_h)
+        state.zone_lerpstrength = clamp_zone.lerpstrength and clamp_zone.lerpstrength >= 0 and clamp_zone.lerpstrength or 1
+    else
+        state.zone_lerpstrength = self.constants.camera_zone_lerpstrength or 1
+    end
+
+    if state.zone ~= clamp_zone then
+        state.zone = clamp_zone
+        if (state.oldgoalx or -999) ~= (goal_x - player.x - (state.nudgex or 0)) and not state.just_started then
+            state.lerptime_h = 0
+        end
+        if (state.oldgoaly or -999) ~= (goal_y - player.y - (state.nudgey or 0)) and not state.just_started then
+            state.lerptime_v = 0
+        end
+    end
+    state.oldgoalx = goal_x - player.x - (state.nudgex or 0)
+    state.oldgoaly = goal_y - player.y - (state.nudgey or 0)
+
+    local nudge_zone = self:getPlatformCameraZone("platform_cam_nudgezone", target_x, target_y)
+    local nudge_rate = 8
+    if nudge_zone then
+        nudge_rate = nudge_zone.nudgerate or 8
+        if state.nudgerate == 999 then
+            nudge_rate = 999
+            state.nudgerate = 8
+        end
+        local mode_lerp = self:getPlatformCameraEventModeLerp(nudge_zone, target_x, target_y)
+        local nx = nudge_zone.mode == "Constant" and nudge_zone.nudgex or MathUtils.lerp(0, nudge_zone.nudgex or 0, mode_lerp)
+        local ny = nudge_zone.mode == "Constant" and nudge_zone.nudgey or MathUtils.lerp(0, nudge_zone.nudgey or 0, mode_lerp)
+        state.nudgex = MathUtils.approach(state.nudgex or 0, nx, nudge_rate * DTMULT)
+        state.nudgey = MathUtils.approach(state.nudgey or 0, ny, nudge_rate * DTMULT)
+    else
+        if state.nudgerate == 999 then
+            nudge_rate = 999
+            state.nudgerate = 8
+        end
+        state.nudgex = MathUtils.approach(state.nudgex or 0, 0, nudge_rate * DTMULT)
+        state.nudgey = MathUtils.approach(state.nudgey or 0, 0, nudge_rate * DTMULT)
+    end
+
+    local autoscroll_zone = self:getPlatformCameraZone("platform_cam_autoscroll", target_x, target_y)
+    if autoscroll_zone then
+        state.scroll_mode = true
+        state.autoscroll_speed = autoscroll_zone.autoscroll_speed or 3.46
+    elseif state.scroll_mode_from_zone then
+        state.scroll_mode = false
+    end
+    state.scroll_mode_from_zone = autoscroll_zone ~= nil
+
     goal_x = MathUtils.clamp(goal_x, min_x, max_x)
     goal_y = MathUtils.clamp(goal_y, min_y, max_y)
 

@@ -1,9 +1,8 @@
+local PlatformActorState = libRequire("featherfall", "scripts.world.states.PlatformActorState")
+local PlatformActions = libRequire("featherfall", "scripts.world.states.PlatformActions")
+
 ---@class FollowerPlatformState : PlatformActorState
 ---@field follower Follower
-local PlatformActorState = modRequire("libraries.featherfall.scripts.world.states.PlatformActorState")
-
-local PlatformActions = modRequire("libraries.featherfall.scripts.world.states.PlatformActions")
-
 local FollowerPlatformState, super = Class(PlatformActorState)
 
 function FollowerPlatformState:init(follower)
@@ -1068,6 +1067,26 @@ function FollowerPlatformState:applyGroundDifference()
     end
 end
 
+function FollowerPlatformState:applyGroundEffectDifference()
+    if not self.entity then
+        return
+    end
+
+    local dx = self.entity.last_ground_effect_dx or 0
+    local dy = self.entity.last_ground_effect_dy or 0
+    if dx == 0 and dy == 0 then
+        return
+    end
+
+    for index = 0, self.position_history_length do
+        self.caterpillar_history_x[index] = (self.caterpillar_history_x[index] or self.follower.x) + dx
+        self.caterpillar_history_y[index] = (self.caterpillar_history_y[index] or self.follower.y) + dy
+    end
+    self.entity.last_ground_effect_dx = 0
+    self.entity.last_ground_effect_dy = 0
+    self.entity.last_ground_effect_ground = nil
+end
+
 function FollowerPlatformState:applyCaterpillarTarget(target_x, target_y, target_ground)
     if not (target_x and target_y) then
         return
@@ -1079,16 +1098,20 @@ function FollowerPlatformState:applyCaterpillarTarget(target_x, target_y, target
     self.follower.y = MathUtils.lerp(self.follower.y, target_y, amount)
     Object.uncache(self.follower)
 
+    local mult = math.max(DTMULT, 0.001)
+    local visual_hspeed = (self.follower.x - old_x) / mult
+    local visual_vspeed = (self.follower.y - old_y) / mult
     if self.entity then
-        local mult = math.max(DTMULT, 0.001)
-        self.entity.hspeed = (self.follower.x - old_x) / mult
-        self.entity.vspeed = (self.follower.y - old_y) / mult
+        self.entity.hspeed = 0
+        self.entity.vspeed = 0
     end
     if target_ground and self.entity then
         self.entity.ground = target_ground
         self.entity.grounded = true
     end
     self:syncFromEntity()
+    self.hspeed = visual_hspeed
+    self.vspeed = visual_vspeed
 end
 
 function FollowerPlatformState:unstickAfterEnter(player)
@@ -1378,6 +1401,7 @@ function FollowerPlatformState:onUpdate()
             skip_moving_ground = true,
         })
     end
+    self:applyGroundEffectDifference()
 
     local force_follow = self:refreshCaterpillarGround()
     self:applyGroundDifference()

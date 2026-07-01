@@ -112,7 +112,7 @@ function actor:init()
     self.default = "walk"
     --self.flip = "right"
     self.voice = "flowery/heyguys"
-    self.portrait_path = "party/flowery/portraits/spr_face_flowery"
+    self.portrait_path = "party/flowery/portraits"
     self.soul_offset = {10, 20}
 
     self.animations = {

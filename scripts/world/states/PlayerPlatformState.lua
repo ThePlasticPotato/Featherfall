@@ -1,9 +1,9 @@
 ---@class PlayerPlatformState : PlatformActorState
 ---@field player Player
-local PlatformActorState = modRequire("libraries.featherfall.scripts.world.states.PlatformActorState")
-local PlatformActions = modRequire("libraries.featherfall.scripts.world.states.PlatformActions")
-
 local PlayerPlatformState, super = Class(PlatformActorState)
+
+local PlatformActorState = libRequire("featherfall", "scripts.world.states.PlatformActorState")
+local PlatformActions = libRequire("featherfall", "scripts.world.states.PlatformActions")
 
 local function normalizeTargetKinds(kinds)
     if type(kinds) ~= "table" then
@@ -44,6 +44,31 @@ local function targetAvailableForAny(target, target_kind)
     return false
 end
 
+local function propertyBool(value)
+    return value == true or value == 1 or value == "true"
+end
+
+local function firstProperty(properties, ...)
+    for _, key in ipairs({...}) do
+        if properties[key] ~= nil then
+            return properties[key]
+        end
+    end
+end
+
+local function drawCircularBar(x, y, value, max_value, color, radius, alpha, thickness)
+    local progress = MathUtils.clamp((value or 0) / math.max(max_value or 1, 1), 0, 1)
+    if progress <= 0 then
+        return
+    end
+    local old_width = love.graphics.getLineWidth()
+    love.graphics.setLineWidth(thickness or 3)
+    Draw.setColor(color or {1, 1, 1}, alpha or 1)
+    love.graphics.arc("line", "open", x, y, radius or 50, -math.pi / 2, (-math.pi / 2) + (math.pi * 2 * progress), 48)
+    love.graphics.setLineWidth(old_width)
+    Draw.setColor(1, 1, 1, 1)
+end
+
 ---todo: holy mess batman
 function PlayerPlatformState:init(player)
     self.player = player
@@ -78,6 +103,27 @@ function PlayerPlatformState:init(player)
     self.key_attack = false
     self.press_attack = false
     self.attack_end_visible = false
+    self.jumpbutton_hover = false
+    self.max_hovers = 5
+    self.hovers_remaining = self.max_hovers
+    self.jumphovering = false
+    self.jumphover_meter = 140
+    self.jumphover_max = self.jumphover_meter
+    self.jumphover_min = 5
+    self.jumphover_time = 0
+    self.jumphover_chargevfx = 0
+    self.jumphover_chargevfx_max = 15
+    self.jumphover_chargevfx_white = 0
+    self.jumphover_chargevfx_whitemax = 20
+    self.hover_movespeed = 6
+    self.jumphover_shiftmode = true
+    self.heart_xoffset = 0
+    self.heart_yoffset = 0
+    self.heart_offset_max = 25
+    self.hover_keeps_momentum = false
+    self.jumphover_iframes_requirement = 10
+    self.heart_mode = 0
+    self.heart_retreating = false
     self.key_left = false
     self.key_right = false
     self.checkpoint_x = 0
@@ -1055,6 +1101,210 @@ function PlayerPlatformState:updateAttack()
     end
 end
 
+function PlayerPlatformState:getHoverEnabled()
+    local source_props = Featherfall:getSourceProperties(self.source)
+    local map_props = Featherfall:getMapProperties()
+    local source_value = firstProperty(source_props, "hover_enabled", "platform_hover_enabled", "jumpbutton_hover")
+    if source_value ~= nil then
+        return propertyBool(source_value)
+    end
+    local map_value = firstProperty(map_props, "platform_hover_enabled", "jumpbutton_hover")
+    if map_value ~= nil then
+        return propertyBool(map_value)
+    end
+    return Featherfall:getConfig("hover_enabled", false) == true
+end
+
+function PlayerPlatformState:moveDuringHover(dx, dy)
+    if not self.entity then
+        return
+    end
+    if dx ~= 0 and not self.entity:findBlockAt(self.player.x + dx, self.player.y) then
+        self.player.x = self.player.x + dx
+    end
+    if dy ~= 0 and not self.entity:findBlockAt(self.player.x, self.player.y + dy) then
+        self.player.y = self.player.y + dy
+    end
+    Object.uncache(self.player)
+end
+
+function PlayerPlatformState:startJumpHover(key_left, key_right, key_up, key_down)
+    local penalty = ((self.max_hovers - self.hovers_remaining) / self.max_hovers) * 10
+    self.jumphover_meter = self.jumphover_meter - penalty
+    if self.jumphover_meter <= 0 then
+        self.jumphover_meter = 1
+    end
+    self.hovers_remaining = self.hovers_remaining - 1
+    Assets.playSound(Featherfall.sounds.action_open)
+    self.jumphovering = true
+    self.jumphover_time = 0
+    if self.entity then
+        self.entity.jumpbuffer = 0
+    end
+    if not self.attacking then
+        self:setPlayerAnimation("jump_up")
+    end
+    if key_left then
+        self.heart_xoffset = -self.heart_offset_max
+    end
+    if key_right then
+        self.heart_xoffset = self.heart_offset_max
+    end
+    if key_up then
+        self.heart_yoffset = -self.heart_offset_max
+    end
+    if key_down then
+        self.heart_yoffset = self.heart_offset_max
+    end
+end
+
+function PlayerPlatformState:updateJumpHover(press_jump, key_jump, key_left, key_right, key_up, key_down)
+    if self.jumphovering and ((not key_jump or self.on_ground or not self.jumpbutton_hover) and self.jumphover_time >= self.jumphover_min) then
+        self.jumphovering = false
+    end
+    if self.on_ground then
+        self.hovers_remaining = self.max_hovers
+    end
+    if press_jump and not self.on_ground and self.jumpbutton_hover and not self.jumphovering
+        and self.jumphover_meter > 0 and self.coyote_timer <= 0 and self.hovers_remaining > 0
+        and self.fallen_in_pit == 0
+    then
+        self:startJumpHover(key_left, key_right, key_up, key_down)
+    end
+
+    if self.jumphovering then
+        self.jumphover_time = self.jumphover_time + DTMULT
+        if self.entity then
+            self.entity.hspeed = self.entity.hspeed * (0.5 ^ DTMULT)
+            self.entity.vspeed = self.entity.vspeed * (0.5 ^ DTMULT)
+        end
+        local pull = false
+        if not self.jumphover_shiftmode then
+            local hinput = (key_right and 1 or 0) - (key_left and 1 or 0)
+            local vinput = (key_down and 1 or 0) - (key_up and 1 or 0)
+            if hinput ~= 0 or vinput ~= 0 then
+                local length = math.sqrt((hinput * hinput) + (vinput * vinput))
+                local move_x = (hinput / length) * self.hover_movespeed * DTMULT
+                local move_y = (vinput / length) * self.hover_movespeed * DTMULT
+                local old_x, old_y = self.player.x, self.player.y
+                self:moveDuringHover(move_x, move_y)
+                pull = self.player.x ~= old_x or self.player.y ~= old_y
+            end
+            if not Featherfall:isPlatformPaused() then
+                self.jumphover_meter = self.jumphover_meter - DTMULT
+                if pull then
+                    self.jumphover_meter = self.jumphover_meter - DTMULT
+                end
+            end
+        end
+        if self.jumphover_meter <= 0 then
+            self.jumphovering = false
+        end
+    end
+
+    if self.jumphover_shiftmode then
+        local pull = false
+        if self.jumphovering and self.heart_mode == 1 then
+            local hinput = (key_right and 1 or 0) - (key_left and 1 or 0)
+            local vinput = (key_down and 1 or 0) - (key_up and 1 or 0)
+            self.heart_xoffset = self.heart_xoffset + (hinput * self.hover_movespeed * DTMULT)
+            self.heart_yoffset = self.heart_yoffset + (vinput * self.hover_movespeed * DTMULT)
+            local max_offset = self.heart_offset_max
+            local move_speed = 4 * DTMULT
+            if self.heart_xoffset < -max_offset then
+                self:moveDuringHover(-math.abs(move_speed), 0)
+                pull = true
+            end
+            if self.heart_xoffset > max_offset then
+                self:moveDuringHover(math.abs(move_speed), 0)
+                pull = true
+            end
+            if self.heart_yoffset < -max_offset then
+                self:moveDuringHover(0, -math.abs(move_speed))
+                pull = true
+            end
+            if self.heart_yoffset > max_offset then
+                self:moveDuringHover(0, math.abs(move_speed))
+                pull = true
+            end
+            if not Featherfall:isPlatformPaused() then
+                self.jumphover_meter = self.jumphover_meter - DTMULT
+                if pull then
+                    self.jumphover_meter = self.jumphover_meter - DTMULT
+                end
+            end
+            self.heart_xoffset = MathUtils.clamp(self.heart_xoffset, -max_offset, max_offset)
+            self.heart_yoffset = MathUtils.clamp(self.heart_yoffset, -max_offset, max_offset)
+        else
+            if self.jumphover_time >= self.jumphover_iframes_requirement then
+                self.heart_retreating = true
+            end
+            self.heart_xoffset = self.heart_xoffset * (0.5 ^ DTMULT)
+            self.heart_yoffset = self.heart_yoffset * (0.5 ^ DTMULT)
+            if math.abs(MathUtils.round(self.heart_xoffset)) < 3 then
+                self.heart_xoffset = 0
+            end
+            if math.abs(MathUtils.round(self.heart_yoffset)) < 3 then
+                self.heart_yoffset = 0
+            end
+            if self.heart_xoffset == 0 and self.heart_yoffset == 0 then
+                self.heart_retreating = false
+            end
+        end
+    end
+
+    self.jumphover_chargevfx = MathUtils.approach(self.jumphover_chargevfx, 0, DTMULT)
+    if self.on_ground or self.fallen_in_pit ~= 0 then
+        if self.jumphover_meter < self.jumphover_max then
+            if self.jumphover_meter < (self.jumphover_max * 0.9) then
+                self.jumphover_chargevfx = ((self.jumphover_max - self.jumphover_meter) / self.jumphover_max) * self.jumphover_chargevfx_max
+                self.jumphover_chargevfx_white = self.jumphover_chargevfx_whitemax
+            end
+            self.jumphover_meter = self.jumphover_max
+        end
+    end
+
+    self.heart_mode = self.jumphovering and 1 or 0
+    self:syncFromEntity()
+end
+
+function PlayerPlatformState:drawHoverUI()
+    if self.targetmode then
+        return
+    end
+
+    local meter_radius = 50
+    local meter_thickness = 3
+    if self.jumphovering then
+        drawCircularBar(0, 0, self.jumphover_meter, self.jumphover_max, {0, 0, 1}, meter_radius, 1, meter_thickness)
+    elseif self.jumphover_chargevfx > 0 then
+        local max_charge = self.jumphover_chargevfx_max
+        local color = {
+            self.jumphover_chargevfx / max_charge,
+            (max_charge - self.jumphover_chargevfx) / max_charge,
+            0,
+        }
+        drawCircularBar(0, 0, max_charge - self.jumphover_chargevfx, max_charge, color, meter_radius, 1, meter_thickness)
+    elseif self.jumphover_chargevfx_white > 0 then
+        drawCircularBar(0, 0, self.jumphover_chargevfx_max, self.jumphover_chargevfx_max, {1, 1, 1}, meter_radius, self.jumphover_chargevfx_white / self.jumphover_chargevfx_whitemax, meter_thickness)
+        self.jumphover_chargevfx_white = MathUtils.approach(self.jumphover_chargevfx_white, 0, DTMULT)
+    end
+
+    if self.heart_mode ~= 1 and self.heart_xoffset == 0 and self.heart_yoffset == 0 then
+        return
+    end
+
+    local heart = Assets.getTexture("player/heart_dodge")
+    if heart then
+        Draw.setColor(1, 0, 0, 1)
+        love.graphics.setLineWidth(2)
+        love.graphics.line(0, 6, self.heart_xoffset, self.heart_yoffset + 6)
+        Draw.draw(heart, self.heart_xoffset - 10, self.heart_yoffset - 4)
+        love.graphics.setLineWidth(1)
+        Draw.setColor(1, 1, 1, 1)
+    end
+end
+
 function PlayerPlatformState:onEnter(old_state, settings)
     settings = settings or {}
 
@@ -1104,6 +1354,27 @@ function PlayerPlatformState:onEnter(old_state, settings)
     self.key_attack = false
     self.press_attack = false
     self.attack_end_visible = false
+    self.jumpbutton_hover = self:getHoverEnabled()
+    self.max_hovers = 5
+    self.hovers_remaining = self.max_hovers
+    self.jumphovering = false
+    self.jumphover_meter = 140
+    self.jumphover_max = self.jumphover_meter
+    self.jumphover_min = 5
+    self.jumphover_time = 0
+    self.jumphover_chargevfx = 0
+    self.jumphover_chargevfx_max = 15
+    self.jumphover_chargevfx_white = 0
+    self.jumphover_chargevfx_whitemax = 20
+    self.hover_movespeed = 6
+    self.jumphover_shiftmode = true
+    self.heart_xoffset = 0
+    self.heart_yoffset = 0
+    self.heart_offset_max = 25
+    self.hover_keeps_momentum = false
+    self.jumphover_iframes_requirement = 10
+    self.heart_mode = 0
+    self.heart_retreating = false
     self.key_left = false
     self.key_right = false
     self.facing = self.player:getFacing() == "left" and "left" or "right"
@@ -1216,7 +1487,10 @@ function PlayerPlatformState:onUpdate()
 
     local key_left = Input.down("left")
     local key_right = Input.down("right")
+    local key_up = Input.down("up")
     local key_down = Input.down("down")
+    local press_jump = Input.pressed("cancel")
+    local key_jump = Input.down("cancel")
     local press_left = Input.pressed("left")
     local press_right = Input.pressed("right")
     if key_left and key_right then
@@ -1270,9 +1544,9 @@ function PlayerPlatformState:onUpdate()
         key_right = key_right,
         dont_accel = grounded_attack,
         force_decel = grounded_attack,
-        block_jump = self.attacking,
-        press_jump = Input.pressed("cancel"),
-        key_jump = Input.down("cancel"),
+        block_jump = self.attacking or self.jumphovering,
+        press_jump = press_jump,
+        key_jump = key_jump,
     })
     if self.entity.jump_ceiling_blocked then
         Assets.playSound(Featherfall.sounds.landing)
@@ -1286,6 +1560,7 @@ function PlayerPlatformState:onUpdate()
         self:applyAttackAnimation()
     end
     self:updateAttack()
+    self:updateJumpHover(press_jump, key_jump, key_left, key_right, key_up, key_down)
 
     if self.attacking or self.attack_end_visible then
         self:applyAttackAnimation()

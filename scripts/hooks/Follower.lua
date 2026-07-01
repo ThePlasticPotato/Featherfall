@@ -1,6 +1,6 @@
 local Follower, super = HookSystem.hookScript(Follower)
 
-local FollowerPlatformState = modRequire("libraries.featherfall.scripts.world.states.FollowerPlatformState")
+local FollowerPlatformState = libRequire("featherfall", "scripts.world.states.FollowerPlatformState")
 
 function Follower:init(chara, x, y, target)
     super.init(self, chara, x, y, target)
