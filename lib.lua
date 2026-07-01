@@ -25,6 +25,7 @@ local Featherfall = {
     platform_dialogue = nil,
     platform_pause_coyote = 0,
     platform_hitstop = 0,
+    platform_hitstop_pending = 0,
 }
 
 _G.Featherfall = Featherfall
@@ -201,6 +202,7 @@ function Featherfall:resetControllerState()
     self.platforming = false
     self.platform_pause_coyote = 0
     self.platform_hitstop = 0
+    self.platform_hitstop_pending = 0
     self.dynamic_platforms = {}
     self:resetPlatformCamera()
     self:clearPetalWings(true)
@@ -546,15 +548,22 @@ function Featherfall:requestPlatformHitstop(frames)
     if frames <= 0 then
         return
     end
-    self.platform_hitstop = math.max(self.platform_hitstop or 0, frames)
+    self.platform_hitstop_pending = math.max(self.platform_hitstop_pending or 0, frames)
 end
 
 function Featherfall:clearPlatformHitstop()
     self.platform_hitstop = 0
+    self.platform_hitstop_pending = 0
 end
 
 function Featherfall:updatePlatformHitstop()
     if self:isPlatformPauseRequested() then
+        return
+    end
+    local pending = self.platform_hitstop_pending or 0
+    if pending > 0 then
+        self.platform_hitstop = math.max(self.platform_hitstop or 0, math.max(0, pending - 1))
+        self.platform_hitstop_pending = 0
         return
     end
     self.platform_hitstop = MathUtils.approach(self.platform_hitstop or 0, 0, DTMULT)
