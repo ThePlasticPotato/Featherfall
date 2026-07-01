@@ -447,9 +447,10 @@ function PlayerPlatformState:spawnDashAfterimage()
     if self.targetmode or not (Game.world and PlatformActionAfterimage and self.player and self.player.visible) then
         return
     end
-    local afterimage = PlatformActionAfterimage(self.player, {145 / 255, 226 / 255, 75 / 255}, 0.3, {
+    local afterimage = PlatformActionAfterimage(self.player, {51 / 255, 153 / 255, 221 / 255}, 0.3, {
         fade_speed = 0.05,
         solid = true,
+        additive = true,
         world_space = true,
     })
     afterimage.layer = (self.player.layer or 0) - 0.01
