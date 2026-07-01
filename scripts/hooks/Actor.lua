@@ -145,6 +145,8 @@ local DEFAULT_PLATFORM_DATA = {
             land = {sprite = "party/kris/platform/land", speed = DR_ANIM_SPEED, loop = true},
             turn = {sprite = "party/kris/platform/turn", speed = DR_ANIM_SPEED, loop = true},
             halt = {sprite = "party/kris/platform/halt", speed = DR_ANIM_SPEED, loop = true},
+            hurt_air = {sprite = "party/kris/platform/hurt_air"},
+            hurt_ground = {sprite = "party/kris/platform/hurt_ground"},
             slash_ground = {
                 sprite = "party/kris/platform/slash_ground",
                 manual = true,

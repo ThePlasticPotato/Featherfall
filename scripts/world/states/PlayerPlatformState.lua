@@ -440,7 +440,7 @@ function PlayerPlatformState:onPlatformBulletHit(bullet)
         self.entity.grounded = false
         self.entity.ground = nil
     end
-    self:setPlayerAnimation("hurt_air")
+    self:setPlayerAnimation(self:getHurtAnimationName())
 
     if bullet.neutralizable then
         bullet:neutralize(4)
@@ -1488,6 +1488,13 @@ function PlayerPlatformState:getAirAnimationName()
     return "jump_down"
 end
 
+function PlayerPlatformState:getHurtAnimationName()
+    if (self.entity and self.entity.grounded) or self.on_ground then
+        return "hurt_ground"
+    end
+    return "hurt_air"
+end
+
 function PlayerPlatformState:beginLandAnimation()
     self.land_anim = true
     self.turn_anim = false
@@ -2257,7 +2264,7 @@ function PlayerPlatformState:onUpdate()
     self:updateHeartDanger()
 
     if self.hurt then
-        self:setPlayerAnimation("hurt_air")
+        self:setPlayerAnimation(self:getHurtAnimationName())
     elseif self.attacking or self.attack_end_visible then
         self:applyAttackAnimation()
     elseif self.jumpsquat_timer > 0 then
