@@ -23,6 +23,7 @@ local Featherfall = {
     action_labels = {},
     platform_camera = nil,
     platform_dialogue = nil,
+    platform_pause_coyote = 0,
 }
 
 _G.Featherfall = Featherfall
@@ -91,6 +92,10 @@ Featherfall.sounds = {
     slashpusher_bounce = "bounceflower_subtle",
     dash_start = "weaponpull_fast",
     dash_cancel = "wing",
+    dash_windloop = "plat_windloop",
+    dash_impact = "punchmed",
+    dash_impact_cymbal = "cymbal",
+    torii_sparkle = "sparkle_glock",
     petal_grab = "grab",
     petal_drain = "petaldrain",
     attack_1 = "smallswing",
@@ -193,6 +198,7 @@ function Featherfall:resetControllerState()
     self.follower_visual_owners = {}
     self.pending_platform = false
     self.platforming = false
+    self.platform_pause_coyote = 0
     self.dynamic_platforms = {}
     self:resetPlatformCamera()
     self:clearPetalWings(true)
@@ -508,8 +514,15 @@ function Featherfall:isPlatformPaused()
     if Game.world and Game.world.state == "MENU" and Game.world.menu then
         return true
     end
+    if (self.platform_pause_coyote or 0) > 0 then
+        return true
+    end
     local player_state = Game.world and Game.world.player and Game.world.player.platform_state
     return player_state and player_state.targetmode or false
+end
+
+function Featherfall:queuePlatformPauseCoyote(frames)
+    self.platform_pause_coyote = math.max(self.platform_pause_coyote or 0, frames or 1)
 end
 
 function Featherfall:getActionTargets()
@@ -739,15 +752,17 @@ function Featherfall:updatePlatformMotion(object)
         object.platform_motion_start_y = object.y
     end
 
-    object.platform_motion_timer = (object.platform_motion_timer or 0) + DTMULT
-    local angle = ((object.platform_motion_timer or 0) + (object.platform_motion_timer_start or 0)) * (object.platform_motion_freq or 1)
-    local offset = (object.platform_motion_position_offset or 0) + ((object.platform_motion_amp or 0) * math.sin(angle))
-    if object.platform_motion_axis == "x" then
-        object.x = object.platform_motion_start_x + offset
-    elseif object.platform_motion_axis == "y" then
-        object.y = object.platform_motion_start_y + offset
+    if not self:isPlatformPaused() then
+        object.platform_motion_timer = (object.platform_motion_timer or 0) + DTMULT
+        local angle = ((object.platform_motion_timer or 0) + (object.platform_motion_timer_start or 0)) * (object.platform_motion_freq or 1)
+        local offset = (object.platform_motion_position_offset or 0) + ((object.platform_motion_amp or 0) * math.sin(angle))
+        if object.platform_motion_axis == "x" then
+            object.x = object.platform_motion_start_x + offset
+        elseif object.platform_motion_axis == "y" then
+            object.y = object.platform_motion_start_y + offset
+        end
+        Object.uncache(object)
     end
-    Object.uncache(object)
     return true
 end
 
@@ -771,6 +786,7 @@ function Featherfall:updatePlatformMotionForPhysics()
         self:snapEntitiesStandingOnPlatform(platform)
     end
     self.platform_motion_phase = false
+    self.platform_pause_coyote = MathUtils.approach(self.platform_pause_coyote or 0, 0, DTMULT)
 end
 
 function Featherfall:snapEntitiesStandingOnPlatform(platform)
@@ -853,6 +869,19 @@ function Featherfall:getPlatformCameraState(camera)
         }
     end
     return self.platform_camera
+end
+
+function Featherfall:nudgePlatformCamera(nudgex, nudgey, rate)
+    local camera = Game.world and Game.world.camera
+    if not camera then
+        return
+    end
+
+    local state = self:getPlatformCameraState(camera)
+    state.manual_nudgex = nudgex
+    state.manual_nudgey = nudgey
+    state.manual_nudge_rate = rate or 8
+    state.manual_nudge_timer = 2
 end
 
 function Featherfall:getPlatformCameraTarget(player)
@@ -1068,6 +1097,20 @@ function Featherfall:updatePlatformCamera()
         end
         state.nudgex = MathUtils.approach(state.nudgex or 0, 0, nudge_rate * DTMULT)
         state.nudgey = MathUtils.approach(state.nudgey or 0, 0, nudge_rate * DTMULT)
+    end
+    if (state.manual_nudge_timer or 0) > 0 then
+        local manual_rate = state.manual_nudge_rate or 8
+        if state.manual_nudgex ~= nil then
+            state.nudgex = MathUtils.approach(state.nudgex or 0, state.manual_nudgex, manual_rate * DTMULT)
+        end
+        if state.manual_nudgey ~= nil then
+            state.nudgey = MathUtils.approach(state.nudgey or 0, state.manual_nudgey, manual_rate * DTMULT)
+        end
+        state.manual_nudge_timer = state.manual_nudge_timer - DTMULT
+        if state.manual_nudge_timer <= 0 then
+            state.manual_nudgex = nil
+            state.manual_nudgey = nil
+        end
     end
 
     local autoscroll_zone = self:getPlatformCameraZone("platform_cam_autoscroll", target_x, target_y)

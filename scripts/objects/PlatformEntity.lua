@@ -668,7 +668,7 @@ function PlatformEntity:updateHorizontalInput(input)
     local hspeed_max = input.hspeed_max or constants.hspeed_max or 9
     local hspeed_min = input.hspeed_min or -hspeed_max
     local accel = self.grounded and (constants.ground_accel or 2) or (constants.air_accel or 2)
-    local decel = self.grounded and (constants.ground_decel or 0.65) or (constants.air_decel or 0.5)
+    local decel = input.decel or (self.grounded and (constants.ground_decel or 0.65) or (constants.air_decel or 0.5))
     local dont_accel = input.dont_accel or false
     local force_decel = input.force_decel or false
 

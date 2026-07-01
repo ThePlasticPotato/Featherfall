@@ -122,6 +122,21 @@ function PlatformActorState:setPlatformAnimation(name)
     end
 end
 
+function PlatformActorState:setPlatformAnimationHoldFrame(name, frame)
+    self:setPlatformAnimation(name)
+
+    local character = self:getCharacter()
+    local animation = self:getPlatformAnimation(name)
+    local frames = animation and animation.sprite and Assets.getFrames(animation.sprite)
+    local sprite = character and character.sprite
+    if not (frames and sprite) then
+        return
+    end
+
+    sprite:setFrame(frame or 1)
+    sprite:pause()
+end
+
 function PlatformActorState:getAnimationDuration(name, image_speed)
     local animation = self:getPlatformAnimation(name)
     local frames = animation and animation.sprite and Assets.getFrames(animation.sprite)

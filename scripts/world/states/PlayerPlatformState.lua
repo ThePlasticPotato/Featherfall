@@ -140,6 +140,11 @@ function PlayerPlatformState:init(player)
     self.dash_lerp_target_y = 0
     self.dash_gate = nil
     self.dashlines = nil
+    self.dash_speed_multiplier = 1
+    self.static_dash = false
+    self.spawn_dashlines = true
+    self.windloop_sound = nil
+    self.afterimagetimer = 2
     self.checkpoint_x = 0
     self.checkpoint_y = 0
     self.respawn_leap_enabled = true
@@ -262,6 +267,9 @@ function PlayerPlatformState:beginDashTransition(gate, direction)
     self.dash_lerp_target_y = gate_y - 62
     self.dashsign = direction
     self.dash_gate = gate
+    self.dash_speed_multiplier = gate.dash_speed_multiplier or 1
+    self.static_dash = gate.static_dash or false
+    self.spawn_dashlines = gate.spawn_dashlines ~= false
     self.attacking = false
     self.dashing = false
     self.dashing_end = 0
@@ -271,6 +279,7 @@ function PlayerPlatformState:beginDashTransition(gate, direction)
     self.facing = direction < 0 and "left" or "right"
     self.player:setFacing(self.facing)
     self.player.sprite.flip_x = self:getPlatformFlipX()
+    self.current_animation = nil
     self:setPlayerAnimation("land")
 
     if self.entity then
@@ -298,20 +307,37 @@ function PlayerPlatformState:startDashing()
 
     if self.entity then
         self.entity.wallcollision = true
-        self.entity.hspeed = self.dashsign * 12
+        self.entity.hspeed = self.static_dash and 0 or (self.dashsign * 12)
         self.entity.vspeed = 0
         self.entity.grounded = true
         self.entity.jump_time = 0
     end
-    self.hspeed = self.dashsign * 12
+    self.hspeed = self.static_dash and 0 or (self.dashsign * 12)
     self.vspeed = 0
     self.movement_direction = self.dashsign
     self:setPlayerAnimation("run")
 
     Assets.stopSound(Featherfall.sounds.dash_start)
     Assets.playSound(Featherfall.sounds.dash_start)
-    if Game.world and PlatformDashLines then
+    Assets.stopSound(Featherfall.sounds.dash_windloop)
+    self.windloop_sound = Assets.playSound(Featherfall.sounds.dash_windloop, 0)
+    if self.windloop_sound then
+        self.windloop_sound:setLooping(true)
+    end
+    if self.spawn_dashlines and Game.world and PlatformDashLines then
         self.dashlines = Game.world:spawnObject(PlatformDashLines(self.player, -15 * self.dashsign), WORLD_LAYERS["above_events"])
+    end
+end
+
+function PlayerPlatformState:applyDashTransitionAnimation()
+    self:setPlatformAnimationHoldFrame("land", 1)
+end
+
+function PlayerPlatformState:stopDashWindLoop()
+    if self.windloop_sound then
+        self.windloop_sound:setVolume(0)
+        self.windloop_sound:setLooping(false)
+        self.windloop_sound = nil
     end
 end
 
@@ -349,6 +375,7 @@ function PlayerPlatformState:updateDashGate(move)
         if gate.usable and not gate.just_initiated then
             self.dashing = false
             self.dashing_end = 15
+            self:stopDashWindLoop()
             if gate.consume then
                 gate:consume()
             end
@@ -372,14 +399,32 @@ function PlayerPlatformState:updateDashGate(move)
     self:beginDashTransition(gate, direction)
 end
 
-function PlayerPlatformState:updateDashing(move)
-    self.dashspeed_modified = self.dashspeed
+function PlayerPlatformState:updateDashing(move, key_up, key_down)
+    self.dashspeed_modified = self.static_dash and 0 or (self.dashspeed * (self.dash_speed_multiplier or 1))
     if self.dashing then
         self.land_anim = false
         self.turn_anim = false
         self.runstop_anim = false
+        self.facing = self.dashsign < 0 and "left" or "right"
+        self.player:setFacing(self.facing)
+        self.player.sprite.flip_x = self:getPlatformFlipX()
         if self.entity then
             self.entity.hspeed = MathUtils.approach(self.entity.hspeed, (self.dashspeed_modified * self.dashsign), 0.35 * DTMULT)
+            local vinput = (key_down and 1 or 0) - (key_up and 1 or 0)
+            self.entity.vspeed = MathUtils.approach(self.entity.vspeed, vinput * 8, 3 * DTMULT)
+        end
+        if Featherfall and Featherfall.nudgePlatformCamera then
+            Featherfall:nudgePlatformCamera((self.dashspeed_modified or 0) * self.dashsign * 4, nil, math.abs(self.hspeed or 0) + 0.55)
+        end
+        if self.windloop_sound then
+            self.windloop_sound:setVolume((math.abs(self.hspeed or 0) / math.max(self.dashspeed or 1, 1)) * 0.1)
+            local _, camera_y, _, camera_height = self:getCameraRect()
+            self.windloop_sound:setPitch(Utils.lerp(2.5, 1.5, (self.player.y - camera_y) / math.max(camera_height, 1)))
+        end
+        self.afterimagetimer = (self.afterimagetimer or 2) - DTMULT
+        if self.afterimagetimer <= 0 then
+            self:spawnDashAfterimage()
+            self.afterimagetimer = 1
         end
     elseif self.dashing_end > 0 then
         self.dashing_end = MathUtils.approach(self.dashing_end, 0, DTMULT)
@@ -391,6 +436,36 @@ function PlayerPlatformState:updateDashing(move)
             self.turn_anim_timer = self:getAnimationDuration("turn")
         end
     end
+end
+
+function PlayerPlatformState:spawnDashAfterimage()
+    if self.targetmode or not (Game.world and PlatformActionAfterimage and self.player and self.player.visible) then
+        return
+    end
+    local afterimage = PlatformActionAfterimage(self.player, {145 / 255, 226 / 255, 75 / 255}, 0.3, {
+        fade_speed = 0.05,
+        solid = true,
+        world_space = true,
+    })
+    afterimage.layer = (self.player.layer or 0) - 0.01
+    Game.world:spawnObject(afterimage, afterimage.layer)
+end
+
+function PlayerPlatformState:spawnDashImpact()
+    if not (Game.world and PlatformDust) then
+        return
+    end
+
+    local impact = PlatformDust(self.player.x + (20 * (self.dashsign ~= 0 and self.dashsign or 1)), self.player.y, 1, "effects/platform/smack_vfx", {
+        hspeed = 0,
+        image_xscale = 2,
+        image_yscale = 2,
+        image_angle = math.rad(90 * love.math.random(0, 3)),
+        image_speed = 1,
+        hold_frame = true,
+        max_life = 2,
+    })
+    Game.world:spawnObject(impact, (self.player.layer or WORLD_LAYERS["above_events"]) + 0.01)
 end
 
 function PlayerPlatformState:updateCheckpoint()
@@ -683,6 +758,9 @@ function PlayerPlatformState:endTargetMode(select_target)
 
     self:setTargetModeSpritePaused(false)
     self.targetmode = false
+    if Featherfall and Featherfall.queuePlatformPauseCoyote then
+        Featherfall:queuePlatformPauseCoyote(1)
+    end
     self.targetindex = -1
     self.hlit_target = -1
     self.hlit_name = ""
@@ -1689,7 +1767,7 @@ function PlayerPlatformState:onUpdate()
         return
     end
     if self:updateDashTransition() then
-        self:setPlayerAnimation("land")
+        self:applyDashTransitionAnimation()
         self.attack_press_timer = MathUtils.approach(self.attack_press_timer, 0, DTMULT)
         return
     end
@@ -1737,6 +1815,14 @@ function PlayerPlatformState:onUpdate()
         self.player.sprite.flip_x = self:getPlatformFlipX()
     end
 
+    if self.dashing then
+        key_left = false
+        key_right = false
+        press_left = false
+        press_right = false
+        move = 0
+    end
+
     if not self.dashing and self.dashing_end <= 0 then
         self:updateAttackInput()
     end
@@ -1764,31 +1850,36 @@ function PlayerPlatformState:onUpdate()
     self:updateDashGate(move)
     if self.dash_transition_con > 0 then
         self:updateDashTransition()
-        self:setPlayerAnimation("land")
+        self:applyDashTransitionAnimation()
         self.attack_press_timer = MathUtils.approach(self.attack_press_timer, 0, DTMULT)
         return
     end
-    self:updateDashing(move)
+    self:updateDashing(move, key_up, key_down)
     self.entity:updatePlayer({
         move = move,
         key_left = key_left,
         key_right = key_right,
         dont_accel = grounded_attack or self.dashing or self.dashing_end > 0,
         force_decel = grounded_attack or self.dashing_end > 0,
+        decel = self.dashing and 1 or ((self.dashing_end > 0) and 0.9 or nil),
         hspeed_max = (self.dashing or self.dashing_end > 0) and self.dashspeed_modified or nil,
         hspeed_min = (self.dashing or self.dashing_end > 0) and -self.dashspeed_modified or nil,
-        block_jump = self.attacking or self.jumphovering or self.dashing or self.dashing_end > 0,
+        block_jump = self.attacking or self.jumphovering or self.dashing_end > 0,
         press_jump = press_jump,
         key_jump = key_jump,
     })
     if self.dashing and self.entity.wallhitspd ~= 0 then
         self.attacking = false
         self.dashing = false
+        self:stopDashWindLoop()
         self.entity.grounded = false
         self.entity.vspeed = -14
         self.entity.hspeed = -(self.entity.wallhitspd or 0) * 0.25
         self.hspeed = self.entity.hspeed
         self.vspeed = self.entity.vspeed
+        Assets.playSound(Featherfall.sounds.dash_impact_cymbal, 1, 1.2)
+        Assets.playSound(Featherfall.sounds.dash_impact)
+        self:spawnDashImpact()
     end
     if self.entity.jump_ceiling_blocked then
         Assets.playSound(Featherfall.sounds.landing)
@@ -1833,6 +1924,7 @@ function PlayerPlatformState:onUpdate()
 end
 
 function PlayerPlatformState:onExit(next_state)
+    self:stopDashWindLoop()
     if self.targetmode then
         self:endTargetMode(false)
     else

@@ -1247,6 +1247,7 @@ function FollowerPlatformState:updateDashTransition(player)
         self.dash_transition_active = true
         self.dash_lerp_start_x = self.follower.x
         self.dash_lerp_start_y = self.follower.y
+        self.current_animation = nil
     end
 
     local direction = player_state.dashsign or 1
@@ -1274,7 +1275,7 @@ function FollowerPlatformState:updateDashTransition(player)
         self.entity.wallcollision = false
         self.entity.grounded = false
     end
-    self:setFollowerAnimation("land")
+    self:setPlatformAnimationHoldFrame("land", 1)
     return true
 end
 

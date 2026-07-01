@@ -6,29 +6,23 @@ function PlatformDashLines:init(owner, xspeed)
     self.owner = owner
     self.sprite_path = "world/platform/torii/dashlines"
     self.timer = 0
-    self.xx = 0
     self.xspeed = xspeed or -15
     self.fadespeed = 0.2
     self.alpha = 0
+    self.draw_alpha = 0.35
+end
+
+function PlatformDashLines:applyTransformTo(transform)
+    if self.parent then
+        transform:reset()
+    end
+    super.applyTransformTo(self, transform)
 end
 
 function PlatformDashLines:update()
     super.update(self)
 
-    self.xx = self.xx + (self.xspeed * DTMULT)
-    local width = 2048
-    local texture = Assets.getTexture(self.sprite_path) or (Assets.getFrames(self.sprite_path) or {})[1]
-    if texture then
-        width = texture:getWidth()
-    end
-    local max = math.abs(width) * 6
-    if math.abs(self.xx) >= max then
-        if self.xx > 0 then
-            self.xx = self.xx - max
-        else
-            self.xx = self.xx + max
-        end
-    end
+    self.timer = self.timer + (self.xspeed * DTMULT)
 
     self.alpha = self.alpha + (self.fadespeed * DTMULT)
     if self.alpha > 1 then
@@ -52,19 +46,25 @@ function PlatformDashLines:draw()
         return
     end
 
-    local camera = Game.world and Game.world.camera
-    local x, y = 0, 0
-    if camera and camera.getRect then
-        x, y = camera:getRect(false)
-    elseif camera then
-        x = camera.x or 0
-        y = camera.y or 0
-    end
-
+    local shader = Assets.getShader("platform_dashblend")
+    local last_shader = love.graphics.getShader()
     love.graphics.setBlendMode("add")
-    Draw.setColor(1, 1, 1, (self.alpha or 0) * 0.5)
-    Draw.draw(texture, x + self.xx, y, 0, 1, 1)
-    Draw.draw(texture, x + self.xx, y + 360, 0, 1, 1)
+    Draw.setColor(1, 1, 1, (self.alpha or 0) * self.draw_alpha)
+
+    if shader then
+        love.graphics.setShader(shader)
+        shader:send("iTime", self.timer * 0.0015)
+    end
+    Draw.draw(texture, 0, 0, 0, 1, 1)
+
+    if shader then
+        shader:send("iTime", 14.123553 + (self.timer * 0.0015))
+    end
+    Draw.draw(texture, 0, 360, 0, 1, 1)
+
+    if shader then
+        love.graphics.setShader(last_shader)
+    end
     Draw.setColor(1, 1, 1, 1)
     love.graphics.setBlendMode("alpha")
 end
