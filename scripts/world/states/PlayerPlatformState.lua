@@ -123,6 +123,24 @@ function PlayerPlatformState:init(player)
     self.jumphover_iframes_requirement = 10
     self.heart_mode = 0
     self.heart_retreating = false
+    self.heart_alpha = 0
+    self.heart_danger = false
+    self.heart_proximity = 240
+    self.heart_surface_scroll = 0
+    self.heart_surface_frame = 0
+    self.heart_surface_framespeed = 1
+    self.heart_lightning_alpha = 0
+    self.player:removeFX("platform_heartmode_outline")
+    self.hurt = false
+    self.hurt_timer = 0
+    self.invincible = false
+    self.invincible_timer = 0
+    self.flicker = false
+    self.flicker_timer = 0
+    self.player_visible = true
+    self.hurt_counter = 0
+    self.bullet_knockback = false
+    self.damage = 0
     self.key_left = false
     self.key_right = false
     self.movement_direction = 0
@@ -175,6 +193,7 @@ function PlayerPlatformState:registerEvents()
     self:registerEvent("enter", self.onEnter)
     self:registerEvent("update", self.onUpdate)
     self:registerEvent("leave", self.onExit)
+    self:registerEvent("drawOverPlayer", self.drawOverPlayer)
     self:registerEvent("drawDebug", self.drawDebug)
     self:registerEvent("getDebugInfo", self.getDebugInfo)
 end
@@ -210,6 +229,228 @@ function PlayerPlatformState:syncFromEntity()
     if math.abs(self.hspeed or 0) > 0.1 then
         self.movement_direction = self.hspeed < 0 and -1 or 1
     end
+end
+
+function PlayerPlatformState:getHeartBaseAnchor()
+    local anchor_x, anchor_y = self:getPlatformActionAnchor()
+    if anchor_x and anchor_y then
+        return anchor_x, anchor_y
+    end
+
+    local animation_name = self.current_animation or "idle"
+    local animation = self:getPlatformAnimation(animation_name)
+    local metadata = animation and animation.sprite and self:getPlatformSpriteMetadata(animation.sprite)
+    if metadata and self.player.sprite and self.player.sprite.getRelativePos then
+        return self.player.sprite:getRelativePos(metadata.origin_x, metadata.origin_y, Game.world)
+    end
+
+    return self.player.x, self.player.y
+end
+
+function PlayerPlatformState:worldToPlayerLocal(x, y)
+    if Game.world and Game.world.getRelativePos then
+        return Game.world:getRelativePos(x, y, self.player)
+    end
+    return x - self.player.x, y - self.player.y
+end
+
+function PlayerPlatformState:getHeartCenter(include_offset)
+    local x, y = self:getHeartBaseAnchor()
+    y = y + 6
+    if include_offset ~= false then
+        x = x + (self.heart_xoffset or 0)
+        y = y + (self.heart_yoffset or 0)
+    end
+    return self:worldToPlayerLocal(x, y)
+end
+
+function PlayerPlatformState:getHeartTopLeft(include_offset)
+    local x, y = self:getHeartBaseAnchor()
+    x = x - 10
+    y = y - 4
+    if include_offset ~= false then
+        x = x + (self.heart_xoffset or 0)
+        y = y + (self.heart_yoffset or 0)
+    end
+    return self:worldToPlayerLocal(x, y)
+end
+
+function PlayerPlatformState:getHeartLocalBounds()
+    local x1, y1 = self:getHeartTopLeft(true)
+    local anchor_x, anchor_y = self:getHeartBaseAnchor()
+    local x2, y2 = self:worldToPlayerLocal(anchor_x + (self.heart_xoffset or 0) + 10, anchor_y + (self.heart_yoffset or 0) + 16)
+    return x1, y1, x2 - x1, y2 - y1
+end
+
+function PlayerPlatformState:getHeartOrigin()
+    return self:getHeartTopLeft(true)
+end
+
+function PlayerPlatformState:getHeartCollider()
+    local hx, hy, hw, hh = self:getHeartLocalBounds()
+    return Hitbox(self.player, hx, hy, hw, hh)
+end
+
+function PlayerPlatformState:findNearestPlatformBullet()
+    if not (Game.world and Game.world.children) then
+        return nil
+    end
+
+    local nearest, nearest_dist = nil, math.huge
+    for _, child in ipairs(Game.world.children) do
+        if child.platform_bullet and child.parent and child.visible ~= false then
+            local dist = Utils.dist(self.player.x, self.player.y, child.x, child.y)
+            if dist < nearest_dist then
+                nearest = child
+                nearest_dist = dist
+            end
+        end
+    end
+    return nearest, nearest_dist
+end
+
+function PlayerPlatformState:updateHeartDanger()
+    local bullet, distance = self:findNearestPlatformBullet()
+    self.heart_danger = bullet ~= nil and distance < (self.heart_proximity or 240)
+    self.heart_mode = (self.heart_danger or self.jumphovering) and 1 or 0
+
+    local target_alpha = self.heart_mode == 1 and 1 or 0
+    self.heart_alpha = MathUtils.approach(self.heart_alpha or 0, target_alpha, 0.05 * DTMULT)
+    if self.heart_alpha > 0 then
+        local alpha_change = 0.5 * DTMULT
+        if self.hurt then
+            self.heart_lightning_alpha = (self.heart_lightning_alpha or 0) + alpha_change
+        else
+            self.heart_lightning_alpha = (self.heart_lightning_alpha or 0) - alpha_change
+        end
+        self.heart_lightning_alpha = MathUtils.clamp(self.heart_lightning_alpha, 0, self.heart_alpha)
+        self.heart_surface_scroll = (self.heart_surface_scroll or 0) + (0.5 * DTMULT)
+        if self.hurt then
+            self.heart_surface_scroll = self.heart_surface_scroll + (0.5 * DTMULT)
+        end
+        if self.heart_surface_scroll >= 64 then
+            self.heart_surface_scroll = self.heart_surface_scroll - 64
+        end
+        self.heart_surface_frame = (self.heart_surface_frame or 0) + ((self.heart_surface_framespeed or 1) * DTMULT)
+        if self.heart_surface_frame > 3 then
+            self.heart_surface_frame = 0
+        end
+    else
+        self.heart_lightning_alpha = 0
+    end
+    self:updateHeartModeOutline()
+end
+
+function PlayerPlatformState:updateHeartModeOutline()
+    local alpha = (not self.targetmode and self.player_visible ~= false) and (self.heart_alpha or 0) or 0
+    local fx = self.player:getFX("platform_heartmode_outline")
+    if alpha <= 0 then
+        if fx then
+            self.player:removeFX(fx)
+        end
+        return
+    end
+
+    if not fx then
+        fx = self.player:addFX(OutlineFX({1, 0, 0, alpha}, {thickness = 1}), "platform_heartmode_outline")
+    end
+    fx.thickness = 1
+    fx:setColor(1, 0, 0, alpha)
+    fx.amount = 1
+end
+
+function PlayerPlatformState:updateHurtTimers()
+    if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
+        self.player_visible = true
+        return
+    end
+
+    if self.hurt then
+        if (self.hurt_timer or 0) < 0 then
+            self.hurt = false
+            self.hurt_timer = 0
+            self.invincible = true
+            self.invincible_timer = 30
+            self.flicker = true
+            self.flicker_timer = 30
+        else
+            self.hurt_timer = (self.hurt_timer or 0) - DTMULT
+        end
+    end
+
+    if self.invincible then
+        if (self.invincible_timer or 0) < 0 then
+            self.invincible = false
+            self.invincible_timer = 0
+        else
+            self.invincible_timer = (self.invincible_timer or 0) - DTMULT
+        end
+    end
+
+    if self.flicker then
+        if (self.flicker_timer or 0) <= 0 then
+            self.flicker = false
+            self.player_visible = true
+            self.flicker_timer = 0
+        else
+            self.player_visible = not self.player_visible
+            self.flicker_timer = (self.flicker_timer or 0) - DTMULT
+        end
+    else
+        self.player_visible = true
+    end
+end
+
+function PlayerPlatformState:onPlatformBulletHit(bullet)
+    if self.hurt or self.invincible or self.fallen_in_pit ~= 0 or self.targetmode then
+        return false
+    end
+    if not bullet or (bullet.neutralized or 0) > 0 or (bullet.damage or 0) <= 0 then
+        return false
+    end
+
+    self.damage = bullet.damage or 0
+    self.hurt = true
+    self.hurt_timer = 7
+    self.hurt_counter = (self.hurt_counter or 0) + 1
+    self.attacking = false
+    self.jumphovering = false
+    self.heart_retreating = false
+    self.bullet_knockback = bullet.knockback
+
+    if Game.party then
+        for _, member in ipairs(Game.party) do
+            member:setHealth(math.max(1, member:getHealth() - self.damage))
+        end
+    end
+    if Game.world and Game.world.healthbar then
+        Game.world.healthbar:transitionIn()
+    end
+    Assets.stopSound("hurt1")
+    Assets.playSound("hurt1")
+
+    if self.entity then
+        if bullet.knockback then
+            local dir = self.player.x < bullet.x and -1 or 1
+            self.entity.hspeed = -7 * dir
+        else
+            self.entity.hspeed = 0
+        end
+        self.entity.vspeed = -7
+        self.entity.grounded = false
+        self.entity.ground = nil
+    end
+    self:setPlayerAnimation("hurt_air")
+
+    if bullet.neutralizable then
+        bullet:neutralize(4)
+    elseif bullet.doContactKill then
+        bullet:doContactKill()
+    else
+        bullet:remove()
+    end
+    bullet.platform_bullet_hit = true
+    return true
 end
 
 function PlayerPlatformState:findDashGate()
@@ -1574,8 +1815,61 @@ function PlayerPlatformState:updateJumpHover(press_jump, key_jump, key_left, key
         end
     end
 
-    self.heart_mode = self.jumphovering and 1 or 0
     self:syncFromEntity()
+end
+
+function PlayerPlatformState:drawHeartModeOverlay()
+    if self.targetmode or not self.player_visible or (self.heart_alpha or 0) <= 0 then
+        return
+    end
+
+    local sprite = self.player.sprite
+    local texture = sprite and sprite.texture
+    local shader = Assets.getShader("platform_heartmode")
+    if not (sprite and texture and shader) then
+        return
+    end
+
+    local function drawPattern(path, alpha)
+        if alpha <= 0 then
+            return
+        end
+        local pattern
+        if type(path) == "string" then
+            local frames = Assets.getFrames(path)
+            pattern = Assets.getTexture(path) or (frames and frames[1])
+        else
+            pattern = path
+        end
+        if not pattern then
+            return
+        end
+        shader:send("pattern", pattern)
+        shader:send("pattern_size", {pattern:getWidth(), pattern:getHeight()})
+        shader:send("sprite_size", {texture:getWidth(), texture:getHeight()})
+        shader:send("scroll", {self.heart_surface_scroll or 0, self.heart_surface_scroll or 0})
+        shader:send("amount", alpha)
+        shader:send("flip_x", sprite.flip_x and 1 or 0)
+
+        local last_shader = love.graphics.getShader()
+        love.graphics.setShader(shader)
+        Draw.setColor(1, 1, 1, 1)
+        sprite:drawSelf(true)
+        love.graphics.setShader(last_shader)
+        Draw.setColor(1, 1, 1, 1)
+    end
+
+    drawPattern("effects/platform/heartmode_texture", self.heart_alpha or 0)
+
+    local red_frames = Assets.getFrames("effects/platform/heartmode_texture_red")
+    if red_frames and #red_frames > 0 then
+        local frame = (math.floor(self.heart_surface_frame or 0) % #red_frames) + 1
+        drawPattern(red_frames[frame], self.heart_lightning_alpha or 0)
+    end
+end
+
+function PlayerPlatformState:drawOverPlayer()
+    self:drawHeartModeOverlay()
 end
 
 function PlayerPlatformState:drawHoverUI()
@@ -1604,12 +1898,18 @@ function PlayerPlatformState:drawHoverUI()
         return
     end
 
-    local heart = Assets.getTexture("player/heart_dodge")
+    local frames = Assets.getFrames("ui/platform/playerheart")
+    local heart = frames and frames[1] or Assets.getTexture("player/heart_dodge")
     if heart then
+        local heart_scale = 0.5
+        local base_x, base_y = self:getHeartCenter(false)
+        local heart_center_x, heart_center_y = self:getHeartCenter(true)
+        local heart_x, heart_y, heart_w = self:getHeartLocalBounds()
+        heart_scale = math.abs(heart_w) / heart:getWidth()
         Draw.setColor(1, 0, 0, 1)
         love.graphics.setLineWidth(2)
-        love.graphics.line(0, 6, self.heart_xoffset, self.heart_yoffset + 6)
-        Draw.draw(heart, self.heart_xoffset - 10, self.heart_yoffset - 4)
+        love.graphics.line(base_x, base_y, heart_center_x, heart_center_y)
+        Draw.draw(heart, heart_x, heart_y, 0, heart_scale, heart_scale)
         love.graphics.setLineWidth(1)
         Draw.setColor(1, 1, 1, 1)
     end
@@ -1685,6 +1985,20 @@ function PlayerPlatformState:onEnter(old_state, settings)
     self.jumphover_iframes_requirement = 10
     self.heart_mode = 0
     self.heart_retreating = false
+    self.heart_alpha = 0
+    self.heart_danger = false
+    self.heart_surface_scroll = 0
+    self.heart_surface_frame = 0
+    self.heart_surface_framespeed = 1
+    self.heart_lightning_alpha = 0
+    self.hurt = false
+    self.hurt_timer = 0
+    self.invincible = false
+    self.invincible_timer = 0
+    self.flicker = false
+    self.flicker_timer = 0
+    self.player_visible = true
+    self.damage = 0
     self.key_left = false
     self.key_right = false
     self.facing = self.player:getFacing() == "left" and "left" or "right"
@@ -1766,8 +2080,9 @@ end
 
 function PlayerPlatformState:onUpdate()
     self:updateTargetModeOutline()
+    self:updateHurtTimers()
     if not (Featherfall.transition_prop and Featherfall.transition_prop.parent) then
-        self.player.sprite.visible = true
+        self.player.sprite.visible = self.player_visible ~= false
     end
 
     if self:updatePitRespawn() then
@@ -1784,6 +2099,7 @@ function PlayerPlatformState:onUpdate()
     end
 
     if self:updateTargetMode() then
+        self:updateHeartModeOutline()
         self.attack_press_timer = MathUtils.approach(self.attack_press_timer, 0, DTMULT)
         return
     end
@@ -1854,7 +2170,20 @@ function PlayerPlatformState:onUpdate()
         move = 0
     end
 
-    if not self.dashing and self.dashing_end <= 0 then
+    if self.hurt then
+        key_left = false
+        key_right = false
+        key_up = false
+        key_down = false
+        press_jump = false
+        key_jump = false
+        press_left = false
+        press_right = false
+        move = 0
+        self.attacking = false
+    end
+
+    if not self.hurt and not self.dashing and self.dashing_end <= 0 then
         self:updateAttackInput()
     end
 
@@ -1925,8 +2254,11 @@ function PlayerPlatformState:onUpdate()
     end
     self:updateAttack()
     self:updateJumpHover(press_jump, key_jump, key_left, key_right, key_up, key_down)
+    self:updateHeartDanger()
 
-    if self.attacking or self.attack_end_visible then
+    if self.hurt then
+        self:setPlayerAnimation("hurt_air")
+    elseif self.attacking or self.attack_end_visible then
         self:applyAttackAnimation()
     elseif self.jumpsquat_timer > 0 then
         self:setPlayerAnimation("land")
@@ -1965,10 +2297,13 @@ function PlayerPlatformState:onExit(next_state)
     self.platform_pause_active = false
     self:setTargetModeSpritePaused(false)
     self.player:removeFX("platform_targetmode_outline")
+    self.player:removeFX("platform_heartmode_outline")
     self.targetmode_highlighted = false
     self.actions:reset()
 
     self.player:resetSprite()
+    self.player.sprite.visible = true
+    self.player_visible = true
     self.current_animation = nil
     self.current_sprite_facing = nil
     self.land_anim = false
