@@ -87,6 +87,8 @@ Featherfall.sounds = {
     action_heal = "power",
     action_axe_ready = "wallclaw",
     action_platform_grab = "grab",
+    slashpusher_launch = "glove_launch",
+    slashpusher_bounce = "bounceflower_subtle",
     petal_grab = "grab",
     petal_drain = "petaldrain",
     attack_1 = "smallswing",
@@ -124,6 +126,8 @@ function Featherfall:init()
     local aliases = {
         platform_statue = "platform/statue",
         platform_attackable = "platform/attackable",
+        platform_slashpusher = "platform/slashpusher",
+        platform_bounce_flower = "platform/slashpusher",
         platform_floor = "platform/floor",
         platform_slope = "platform/floor",
         platform_block = "platform/block",
