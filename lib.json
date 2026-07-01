@@ -1,0 +1,16 @@
+{
+    "id": "featherfall",
+    "version": "v1.0.0",
+    "engineVer": "v0.10.0-dev",
+    "authors": [
+        "Vesselbound"
+    ],
+    "config": {
+        "enabled_by_default": true,
+        "enabled_flag": "PLATFORMING_ENABLED",
+        "floor_layer_prefix": "floors",
+        "wall_layer_prefix": "walls",
+        "attack_press_mode": 0,
+        "draw_wings": false
+    }
+}
