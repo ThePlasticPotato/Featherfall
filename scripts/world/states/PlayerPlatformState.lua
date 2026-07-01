@@ -1360,6 +1360,10 @@ function PlayerPlatformState:onExit(next_state)
     self.player.sprite.flip_x = restore.sprite_flip_x
     self.restore_state = nil
 
+    if Game.world then
+        Game.world:setCameraAttached(true, true)
+    end
+
     self.player:cancelFollowerTweens()
     Featherfall:restoreFollowersFromState()
     Featherfall:resetFollowerHistoryForOverworld("WALK")

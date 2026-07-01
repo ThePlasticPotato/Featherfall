@@ -21,6 +21,7 @@ local Featherfall = {
     action_colors = {},
     action_gradients = {},
     action_labels = {},
+    platform_camera = nil,
 }
 
 _G.Featherfall = Featherfall
@@ -46,6 +47,8 @@ Featherfall.constants = {
     jumpbuffer = 4,
     jumpsquat = 2,
     dashspeed = 11,
+    camera_lerptime_max = 15,
+    camera_zone_lerpstrength = 1,
 }
 
 Featherfall.assets = {
@@ -149,6 +152,7 @@ function Featherfall:resetControllerState()
     self.pending_platform = false
     self.platforming = false
     self.dynamic_platforms = {}
+    self:resetPlatformCamera()
     self:clearPetalWings(true)
     if self.action_ui and self.action_ui.parent then
         self.action_ui:remove()
@@ -451,6 +455,14 @@ function Featherfall:isPlatformModeActive()
     return self.platforming or (player and player.state == self.state) or false
 end
 
+function Featherfall:isPlatformPaused()
+    if Game.world and Game.world.state == "MENU" and Game.world.menu then
+        return true
+    end
+    local player_state = Game.world and Game.world.player and Game.world.player.platform_state
+    return player_state and player_state.targetmode or false
+end
+
 function Featherfall:getActionTargets()
     local map = Game.world and Game.world.map
     if not map then
@@ -496,6 +508,10 @@ function Featherfall:updatePlatformDifference(object)
     if not object then
         return 0, 0
     end
+    if self.motion_update_id ~= nil and object.platform_difference_update_id == self.motion_update_id then
+        return object.dif_x or 0, object.dif_y or 0
+    end
+    object.platform_difference_update_id = self.motion_update_id
 
     local previous_x = object.platform_previous_x
     local previous_y = object.platform_previous_y
@@ -519,11 +535,246 @@ function Featherfall:updatePlatformDifference(object)
     object.platform_previous_x = object.x
     object.platform_previous_y = object.y
 
+    if (dx ~= 0 or dy ~= 0) and (object.is_slope or object.platform_slope) then
+        if object.x1 then
+            object.x1 = object.x1 + dx
+        end
+        if object.x2 then
+            object.x2 = object.x2 + dx
+        end
+        if object.y1 then
+            object.y1 = object.y1 + dy
+        end
+        if object.y2 then
+            object.y2 = object.y2 + dy
+        end
+    end
+
     if (dx ~= 0 or dy ~= 0) and object.platform_floortex then
         self:shiftFloortexMetadataAfterMotion(object, dx, dy)
     end
 
     return dx, dy
+end
+
+function Featherfall:setupPlatformMotion(object, properties)
+    properties = properties or object.properties or {}
+    local axis = properties["move_axis"] or properties["motion_axis"]
+    local state = properties["state"] or properties["move_state"]
+    if not axis and (state == 10 or state == "10") then
+        axis = "x"
+    elseif not axis and (state == 11 or state == "11") then
+        axis = "y"
+    end
+    if not axis then
+        return
+    end
+
+    object.platform_motion_axis = axis == "horizontal" and "x"
+        or axis == "vertical" and "y"
+        or axis
+    local amp_key = object.platform_motion_axis == "y" and "ay" or "ax"
+    local freq_key = object.platform_motion_axis == "y" and "fy" or "fx"
+    object.platform_motion_amp = tonumber(properties[amp_key] or properties["amp"] or properties["move_amp"] or properties["amplitude"]) or 0
+    object.platform_motion_freq = tonumber(properties[freq_key] or properties["freq"] or properties["move_freq"] or properties["frequency"]) or 1
+    object.platform_motion_position_offset = tonumber(properties["position_offset"] or properties["move_offset"]) or 0
+    object.platform_motion_timer_start = tonumber(properties["timer_start"] or properties["move_timer_start"]) or 0
+    object.platform_motion_timer = tonumber(properties["timer"] or properties["move_timer"]) or 0
+    object.platform_motion_platform_only = properties["move_platform_only"] ~= false
+    object.moving_platform = properties["moving_platform"] ~= false
+    object.platform_motion_start_x = object.x
+    object.platform_motion_start_y = object.y
+end
+
+function Featherfall:updatePlatformMotion(object)
+    if not (object and object.platform_motion_axis) then
+        return false
+    end
+    if not self.platform_motion_phase then
+        return false
+    end
+    if self.motion_update_id ~= nil and object.platform_motion_update_id == self.motion_update_id then
+        return false
+    end
+    object.platform_motion_update_id = self.motion_update_id
+    if object.platform_motion_platform_only and not (self:isPlatformModeActive() or self.transition_timer > 0) then
+        return false
+    end
+
+    if object.platform_motion_start_x == nil then
+        object.platform_motion_start_x = object.x
+    end
+    if object.platform_motion_start_y == nil then
+        object.platform_motion_start_y = object.y
+    end
+
+    object.platform_motion_timer = (object.platform_motion_timer or 0) + DTMULT
+    local angle = ((object.platform_motion_timer or 0) + (object.platform_motion_timer_start or 0)) * (object.platform_motion_freq or 1)
+    local offset = (object.platform_motion_position_offset or 0) + ((object.platform_motion_amp or 0) * math.sin(angle))
+    if object.platform_motion_axis == "x" then
+        object.x = object.platform_motion_start_x + offset
+    elseif object.platform_motion_axis == "y" then
+        object.y = object.platform_motion_start_y + offset
+    end
+    Object.uncache(object)
+    return true
+end
+
+function Featherfall:updatePlatformMotionForPhysics()
+    self.motion_update_id = (self.motion_update_id or 0) + 1
+    if not (Game.world and Game.world.map) then
+        return
+    end
+
+    self.platform_motion_phase = true
+    for _, event in ipairs(Game.world.map.events or {}) do
+        if event.platform_collision ~= false and (event.platform_motion_axis or event.moving_platform or event.platform_floortex) then
+            self:updatePlatformMotion(event)
+            self:updatePlatformDifference(event)
+            self:snapEntitiesStandingOnPlatform(event)
+        end
+    end
+
+    for _, platform in ipairs(self:getDynamicPlatforms()) do
+        self:updatePlatformDifference(platform)
+        self:snapEntitiesStandingOnPlatform(platform)
+    end
+    self.platform_motion_phase = false
+end
+
+function Featherfall:snapEntitiesStandingOnPlatform(platform)
+    if not platform then
+        return
+    end
+
+    local function snapCharacter(character, precarry_x)
+        local state = character
+            and character.state_manager
+            and character.state_manager.state == self.state
+            and character.platform_state
+            or nil
+        local entity = state and state.entity
+        if entity and entity.grounded and entity.ground == platform then
+            if precarry_x and entity.preCarryMovingGroundX then
+                local start_x, start_y = entity.owner.x, entity.owner.y
+                entity:preCarryMovingGroundX(platform)
+                entity:snapToGround(platform)
+                if entity.recordMovingGroundPreCarry then
+                    entity:recordMovingGroundPreCarry(platform, start_x, start_y)
+                end
+            elseif state.applyGroundDifference then
+                state:applyGroundDifference()
+                entity:snapToGround(platform)
+            else
+                entity:snapToGround(platform)
+            end
+        end
+    end
+
+    if Game.world then
+        snapCharacter(Game.world.player, true)
+        for _, follower in ipairs(Game.world.followers or {}) do
+            snapCharacter(follower)
+        end
+    end
+end
+
+function Featherfall:resetPlatformCamera()
+    self.platform_camera = nil
+end
+
+function Featherfall:getPlatformCameraState(camera)
+    if not self.platform_camera then
+        local x = camera and camera.x or 0
+        local y = camera and camera.y or 0
+        local lerptime = self.constants.camera_lerptime_max or 15
+        self.platform_camera = {
+            x = x,
+            y = y,
+            raw_x = x,
+            raw_y = y,
+            lerptime_h = lerptime,
+            lerptime_v = lerptime,
+            lerptimemax = lerptime,
+            zone_lerpstrength = self.constants.camera_zone_lerpstrength or 1,
+            nudgex = 0,
+            nudgey = 0,
+            shakex = 0,
+            shakey = 0,
+            just_started = true,
+            oldgoalx = -999,
+            oldgoaly = -999,
+            min_x = -1,
+            max_x = -1,
+            scroll_mode = false,
+            autoscroll_speed = 3.46,
+        }
+    end
+    return self.platform_camera
+end
+
+function Featherfall:updatePlatformCamera()
+    local world = Game.world
+    local camera = world and world.camera
+    local player = world and world.player
+    if not (camera and player and player.state_manager and player.state_manager.state == self.state) then
+        return
+    end
+
+    if camera.pan_target then
+        camera.pan_target = nil
+    end
+    if camera.state_manager and camera.state_manager.state ~= "STATIC" then
+        camera:setState("STATIC")
+    end
+
+    local state = self:getPlatformCameraState(camera)
+    local camera_x = state.raw_x or state.x
+    local camera_y = state.raw_y or state.y
+    local scroll_x = camera_x
+    local lerpmax = state.lerptimemax or self.constants.camera_lerptime_max or 15
+    state.lerptimemax = lerpmax
+    state.lerptime_h = math.min((state.lerptime_h or lerpmax) + ((state.zone_lerpstrength or 1) * DTMULT), lerpmax)
+    state.lerptime_v = math.min((state.lerptime_v or lerpmax) + ((state.zone_lerpstrength or 1) * DTMULT), lerpmax)
+
+    local goal_x = player.x + (state.nudgex or 0)
+    local goal_y = player.y + (state.nudgey or 0)
+
+    local min_x, min_y = camera:getMinPosition()
+    local max_x, max_y = camera:getMaxPosition()
+    goal_x = MathUtils.clamp(goal_x, min_x, max_x)
+    goal_y = MathUtils.clamp(goal_y, min_y, max_y)
+
+    camera_x = MathUtils.lerp(camera_x, goal_x, state.lerptime_h / lerpmax)
+    camera_y = MathUtils.lerp(camera_y, goal_y, state.lerptime_v / lerpmax)
+
+    if state.min_x ~= -1 then
+        camera_x = math.max(camera_x, state.min_x)
+    end
+    if state.max_x ~= -1 then
+        camera_x = math.min(camera_x, state.max_x)
+    end
+
+    camera_x = MathUtils.clamp(camera_x, min_x, max_x)
+    camera_y = MathUtils.clamp(camera_y, min_y, max_y)
+
+    if state.scroll_mode and not self:isPlatformPaused() then
+        camera_x = scroll_x + ((state.autoscroll_speed or 3.46) * DTMULT)
+    end
+
+    camera_x = camera_x + math.floor((state.shakex or 0) * 0.5)
+    camera_y = camera_y + math.floor((state.shakey or 0) * 0.5)
+    state.shakex = MathUtils.approach(-(state.shakex or 0), 0, DTMULT)
+    state.shakey = MathUtils.approach(-(state.shakey or 0), 0, DTMULT)
+    state.raw_x = camera_x
+    state.raw_y = camera_y
+    state.x = math.ceil(camera_x)
+    state.y = math.ceil(camera_y)
+    state.just_started = false
+
+    camera.x = state.raw_x
+    camera.y = state.raw_y
+    camera:keepInBounds()
 end
 
 function Featherfall:shiftFloortexMetadataAfterMotion(object, dx, dy)
@@ -552,9 +803,66 @@ function Featherfall:shiftFloortexMetadataAfterMotion(object, dx, dy)
     end
 
     object.floortex_plane_dirty = true
-    object.floortex_source_bounds_dirty = true
-    if self.markFloortexDirty then
-        self:markFloortexDirty()
+    self:shiftFloortexAttachmentsAfterMotion(object, dx, dy)
+end
+
+function Featherfall:drawPlatformMotionDebug(object)
+    if not (DEBUG_RENDER and object) then
+        return
+    end
+
+    if not (object.platform_motion_axis or object.moving_platform or object.rideable) then
+        return
+    end
+
+    love.graphics.setColor(1, 1, 1, 0.9)
+    love.graphics.print(
+        string.format(
+            "pos %.2f %.2f\ndif %.2f %.2f",
+            object.x or 0,
+            object.y or 0,
+            object.dif_x or 0,
+            object.dif_y or 0
+        ),
+        0,
+        -22,
+        0,
+        0.5,
+        0.5
+    )
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+function Featherfall:shiftFloortexAttachmentsAfterMotion(object, dx, dy)
+    if dx == 0 and dy == 0 then
+        return
+    end
+
+    for _, event in ipairs(self:getFloortexEvents()) do
+        if event ~= object
+            and event.platform_floortex
+            and not event.platform_floortex_yorigin
+            and not event.platform_floortex_yplat
+            and self:markerMatchesFloortex(event, object)
+        then
+            event.x = event.x + dx
+            event.y = event.y + dy
+            if event.floortex_original_x then
+                event.floortex_original_x = event.floortex_original_x + dx
+            end
+            if event.floortex_original_y then
+                event.floortex_original_y = event.floortex_original_y + dy
+            end
+            if event.y_ow then
+                event.y_ow = event.y_ow + dy
+            end
+            if event.y_plat then
+                event.y_plat = event.y_plat + dy
+            end
+            event.floortex_plane_dirty = true
+            event.floortex_source_bounds_dirty = true
+            Object.uncache(event)
+        end
     end
 end
 
@@ -1385,6 +1693,7 @@ end
 
 function Featherfall:putPlayerInState(source)
     if Game.world and Game.world.player and Game.world.player.state_manager:hasState(self.state) then
+        self:resetPlatformCamera()
         Game.world.player:setState(self.state, { source = source })
         if self.transition_prop and self.transition_prop.parent then
             self.transition_prop:setTarget(Game.world.player.x, Game.world.player.y, self.constants.transition_platform_delay, "linear")
@@ -1557,6 +1866,7 @@ function Featherfall:exitPlatformMode(source, options)
     if Game.world.player.state ~= self.state then
         return true
     end
+    self:resetPlatformCamera()
 
     local target_x, target_y = self:getOverworldExitPosition(source, Game.world.player)
     local prop_target_x, prop_target_y = self:getOverworldExitPropPosition(source, Game.world.player, target_x, target_y)
@@ -1585,6 +1895,9 @@ function Featherfall:togglePlatformMode(source)
     else
         return self:enterPlatformMode(source)
     end
+end
+
+function Featherfall:preUpdate()
 end
 
 function Featherfall:postUpdate()

@@ -21,10 +21,12 @@ function PlatformFloortexFloor:init(data)
     self.dif_y = 0
     Featherfall:setupFloortexProjection(self, self.properties)
     Featherfall:setupFloortexPlane(self, self.properties)
+    Featherfall:setupPlatformMotion(self, self.properties)
 end
 
 function PlatformFloortexFloor:update()
     super.update(self)
+    Featherfall:updatePlatformMotion(self)
     Featherfall:updatePlatformDifference(self)
     Featherfall:resolveFloortexPlane(self)
     Featherfall:syncFloortexProjectionLayer(self)
@@ -35,6 +37,11 @@ function PlatformFloortexFloor:draw()
     Featherfall:resolveFloortexPlane(self)
     Featherfall:drawFloortexProjection(self)
     super.draw(self)
+end
+
+function PlatformFloortexFloor:drawDebug()
+    super.drawDebug(self)
+    Featherfall:drawPlatformMotionDebug(self)
 end
 
 function PlatformFloortexFloor:onRemove(parent)

@@ -65,7 +65,7 @@ end
 
 function RalseiPlatform:update()
     super.update(self)
-    if not self:syncFromState(true) then
+    if not self:syncFromState(false) then
         self:remove()
     end
 end

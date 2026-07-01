@@ -469,6 +469,7 @@ function PlatformActions:updateApproach(player)
             move = move,
             press_jump = press_jump,
             key_jump = press_jump or state.entity.jumping == 1 or state.entity.jumpsquat > 0,
+            skip_moving_ground = state.applyGroundDifference ~= nil,
         })
     end
     state:syncFromEntity()
@@ -533,7 +534,9 @@ function PlatformActions:updateActive(player)
                 self.state.entity.hspeed = 0
                 self.state.entity.vspeed = 0
             end
-            self.state.entity:updatePhysics()
+            self.state.entity:updatePhysics({
+                skip_moving_ground = self.state.applyGroundDifference ~= nil,
+            })
         end
         self.state:syncFromEntity()
         self:faceTarget(self.target)
@@ -560,7 +563,9 @@ function PlatformActions:updateActive(player)
         self.timer = self.timer + DTMULT
         if self.state.entity then
             self.state.entity.hspeed = 0
-            self.state.entity:updatePhysics()
+            self.state.entity:updatePhysics({
+                skip_moving_ground = self.state.applyGroundDifference ~= nil,
+            })
         end
         self.state:syncFromEntity()
         self:faceTarget(self.target)

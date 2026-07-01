@@ -484,7 +484,7 @@ function FollowerPlatformState:updateRalseiFallDown(player)
     if self.entity then
         self.entity.hspeed = 0
         self.entity.vspeed = math.min((self.entity.vspeed or 0) + (0.5 * DTMULT), 15)
-        self.entity:updatePhysics()
+        self.entity:updatePhysics({skip_moving_ground = true})
     else
         self.follower.y = self.follower.y + (8 * DTMULT)
         Object.uncache(self.follower)
@@ -783,12 +783,28 @@ function FollowerPlatformState:resetCaterpillarHistory(anchor_x, anchor_y)
     end
 end
 
+function FollowerPlatformState:getOwnerBottomY(owner, entity)
+    if entity then
+        local _, _, _, _, _, bottom = entity:getWorldBoundsAt(owner.x, owner.y)
+        return bottom
+    end
+    return owner.y
+end
+
+function FollowerPlatformState:getCaterpillarAnchorY(player)
+    local player_state = player and player.platform_state
+    local player_bottom = player and self:getOwnerBottomY(player, player_state and player_state.entity) or self.follower.y
+    local follower_bottom = self.entity and self:getOwnerBottomY(self.follower, self.entity) or self.follower.y
+    return player_bottom - (follower_bottom - self.follower.y)
+end
+
 function FollowerPlatformState:seedCaterpillarHistory(player)
     if not player then
         return
     end
 
-    self:resetCaterpillarHistory(player.x, player.y)
+    local anchor_y = self:getCaterpillarAnchorY(player)
+    self:resetCaterpillarHistory(player.x, anchor_y)
     local distance = self:getCaterpillarDistance()
     if distance <= 0 then
         return
@@ -797,7 +813,7 @@ function FollowerPlatformState:seedCaterpillarHistory(player)
     for index = 0, distance do
         local progress = index / distance
         self.caterpillar_history_x[index] = MathUtils.lerp(player.x, self.follower.x, progress)
-        self.caterpillar_history_y[index] = MathUtils.lerp(player.y, self.follower.y, progress)
+        self.caterpillar_history_y[index] = MathUtils.lerp(anchor_y, self.follower.y, progress)
         self.caterpillar_history_speed[index] = 0
         self.caterpillar_history_direction[index] = 0
         self.caterpillar_history_ground[index] = nil
@@ -809,7 +825,7 @@ function FollowerPlatformState:recoverToParent(player)
         return
     end
 
-    self:resetCaterpillarHistory(player.x, player.y)
+    self:resetCaterpillarHistory(player.x, self:getCaterpillarAnchorY(player))
     self.recover_alpha_timer = 30
     self.offscreen_despawn_cooldown = 100
     self.follower.alpha = 0
@@ -888,7 +904,7 @@ function FollowerPlatformState:updatePitRespawn(player)
         end
     end
     if self.entity then
-        self.entity:updatePhysics()
+        self.entity:updatePhysics({skip_moving_ground = true})
     end
     self:syncFromEntity()
     if self.vspeed > 0 and self:isOnscreen(0) and not (self.entity and self.entity:findBlockAt(self.follower.x, self.follower.y)) and self.follower.y < camera_y + camera_height - 40 then
@@ -912,6 +928,36 @@ function FollowerPlatformState:getParentHistoryState(player)
         player_state.entity and player_state.entity.ground
 end
 
+function FollowerPlatformState:refreshCaterpillarGround()
+    if not self.entity then
+        return false
+    end
+
+    local distance = self:getCaterpillarDistance()
+    local remembered_ground = self.caterpillar_history_ground[distance]
+    if remembered_ground then
+        self.entity.ground = remembered_ground
+        self.entity.grounded = true
+    end
+
+    local force_follow = false
+    local ground = self.entity:findGroundAt(self.follower.x, self.follower.y, 2)
+    if ground then
+        self.entity.ground = ground
+        self.entity.grounded = true
+    else
+        force_follow = true
+    end
+
+    if self.entity:findBlockAt(self.follower.x, self.follower.y) then
+        force_follow = true
+    end
+
+    self.caterpillar_history_ground[distance] = self.entity.ground
+    self:syncFromEntity()
+    return force_follow
+end
+
 function FollowerPlatformState:findFollowerCue()
     if not self:isOnscreen(0) then
         return
@@ -927,7 +973,7 @@ function FollowerPlatformState:findFollowerCue()
     end
 end
 
-function FollowerPlatformState:pushCaterpillarHistory(player)
+function FollowerPlatformState:pushCaterpillarHistory(player, force_follow)
     if not player then
         return
     end
@@ -936,7 +982,8 @@ function FollowerPlatformState:pushCaterpillarHistory(player)
     local parent_grounded = not player_state or player_state.on_ground
     local parent_speed = player_state and MathUtils.dist(0, 0, player_state.hspeed or 0, player_state.vspeed or 0) or 0
     local parent_dist = MathUtils.dist(self.follower.x, self.follower.y, player.x, player.y)
-    local should_shift = (not self.on_ground)
+    local should_shift = force_follow
+        or (not self.on_ground)
         or (not parent_grounded)
         or (math.floor(parent_speed + 0.5) > 2)
         or (parent_dist >= 200)
@@ -957,7 +1004,7 @@ function FollowerPlatformState:pushCaterpillarHistory(player)
             self.caterpillar_history_ground[index] = self.caterpillar_history_ground[index - 1]
         end
         self.caterpillar_history_x[0] = player.x
-        self.caterpillar_history_y[0] = player.y
+        self.caterpillar_history_y[0] = self:getCaterpillarAnchorY(player)
         self.caterpillar_history_speed[0] = parent_speed
         self.caterpillar_history_direction[0] = parent_direction
         self.caterpillar_history_ground[0] = parent_ground
@@ -976,11 +1023,44 @@ function FollowerPlatformState:getCaterpillarTarget(player)
 end
 
 function FollowerPlatformState:applyGroundDifference()
-    local dx = self.entity and self.entity.last_platform_dx or 0
-    local dy = self.entity and self.entity.last_platform_dy or 0
-    if dx == 0 and dy == 0 then
+    if not self.entity then
         return
     end
+
+    self.entity.last_platform_dx = 0
+    self.entity.last_platform_dy = 0
+    local ground = self.entity.ground
+    if not (ground and (ground.moving_platform or ground.rideable)) then
+        self.ground_difference_consumed_ground = nil
+        self.ground_difference_consumed_id = nil
+        return
+    end
+
+    local difference_id = ground.platform_difference_update_id
+    if difference_id and self.ground_difference_consumed_ground == ground and self.ground_difference_consumed_id == difference_id then
+        return
+    end
+
+    local dx = ground.dif_x or 0
+    local dy = ground.dif_y or 0
+    if dx == 0 and dy == 0 then
+        self.ground_difference_consumed_ground = ground
+        self.ground_difference_consumed_id = difference_id
+        return
+    end
+    if self.entity:findBlockAt(self.follower.x + dx, self.follower.y + dy, ground) then
+        self.ground_difference_consumed_ground = ground
+        self.ground_difference_consumed_id = difference_id
+        return
+    end
+
+    self.follower.x = self.follower.x + dx
+    self.follower.y = self.follower.y + dy
+    Object.uncache(self.follower)
+    self.entity.last_platform_dx = dx
+    self.entity.last_platform_dy = dy
+    self.ground_difference_consumed_ground = ground
+    self.ground_difference_consumed_id = difference_id
 
     for index = 0, self.position_history_length do
         self.caterpillar_history_x[index] = (self.caterpillar_history_x[index] or self.follower.x) + dx
@@ -1287,21 +1367,6 @@ function FollowerPlatformState:onUpdate()
     if Featherfall.transition_timer <= 0 and self.offscreen_despawn_cooldown <= 0 and not self:isOnscreen(120) then
         self:recoverToParent(player)
     end
-    self:pushCaterpillarHistory(player)
-    local follow_x, follow_y, follow_ground = self:getCaterpillarTarget(player)
-    local move = 0
-    local follow_distance = 0
-    if player then
-        follow_x = follow_x or player.x
-        follow_y = follow_y or player.y
-        follow_distance = MathUtils.dist(self.follower.x, self.follower.y, follow_x, follow_y)
-        if self.follower.x > follow_x then
-            move = -1
-        elseif self.follower.x < follow_x then
-            move = 1
-        end
-    end
-    local previous_facing = self.facing
 
     if self.entity then
         self.entity:updatePlayer({
@@ -1310,10 +1375,30 @@ function FollowerPlatformState:onUpdate()
             key_right = false,
             press_jump = false,
             key_jump = false,
+            skip_moving_ground = true,
         })
     end
-    self:syncFromEntity()
+
+    local force_follow = self:refreshCaterpillarGround()
     self:applyGroundDifference()
+
+    self:pushCaterpillarHistory(player, force_follow)
+    local follow_x, follow_y, follow_ground = self:getCaterpillarTarget(player)
+    local move = 0
+    local follow_distance = 0
+    if player then
+        follow_x = follow_x or player.x
+        follow_y = follow_y or player.y
+        follow_distance = MathUtils.dist(self.follower.x, self.follower.y, follow_x, follow_y)
+        local follow_dx = follow_x - self.follower.x
+        if follow_dx < -0.5 then
+            move = -1
+        elseif follow_dx > 0.5 then
+            move = 1
+        end
+    end
+    local previous_facing = self.facing
+
     self:applyCaterpillarTarget(follow_x, follow_y, follow_ground)
 
     local meaningful_follow = follow_distance > 0.5
@@ -1331,7 +1416,7 @@ function FollowerPlatformState:onUpdate()
     end
 
     local anim_move = meaningful_follow and move or 0
-    self:updateMovementAnimationFlags(false, false, move)
+    self:updateMovementAnimationFlags(false, false, anim_move)
     self:applyMovementAnimation(anim_move)
 end
 

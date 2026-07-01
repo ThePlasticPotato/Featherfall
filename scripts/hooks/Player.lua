@@ -15,6 +15,13 @@ function Player:isPlatforming()
     return self.state_manager and self.state_manager.state == "FEATHERFALL"
 end
 
+function Player:isCameraAttachable()
+    if self:isPlatforming() then
+        return false
+    end
+    return super.isCameraAttachable(self)
+end
+
 function Player:requestPlatformAction(target, data)
     if self.platform_state then
         return self.platform_state:requestAction(target, data)

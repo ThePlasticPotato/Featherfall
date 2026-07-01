@@ -17,15 +17,22 @@ function PlatformBlock:init(data)
     self.conveyor_hspeed = self.properties["conveyor_hspeed"] or 0
     self.dif_x = 0
     self.dif_y = 0
+    Featherfall:setupPlatformMotion(self, self.properties)
 end
 
 function PlatformBlock:update()
     super.update(self)
+    Featherfall:updatePlatformMotion(self)
     Featherfall:updatePlatformDifference(self)
 end
 
 function PlatformBlock:draw()
     super.draw(self)
+end
+
+function PlatformBlock:drawDebug()
+    super.drawDebug(self)
+    Featherfall:drawPlatformMotionDebug(self)
 end
 
 return PlatformBlock

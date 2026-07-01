@@ -21,6 +21,9 @@ function PlatformEntity:init(owner, constants)
     self.climbing = false
     self.last_platform_dx = 0
     self.last_platform_dy = 0
+    self.precarried_ground = nil
+    self.precarried_dx = 0
+    self.precarried_dy = 0
 
     self.hitbox = {0, 0, 20, 38}
     self.open_x = owner.x
@@ -54,6 +57,9 @@ function PlatformEntity:reset(settings)
     self.climbing = settings.climbing or false
     self.last_platform_dx = 0
     self.last_platform_dy = 0
+    self.precarried_ground = nil
+    self.precarried_dx = 0
+    self.precarried_dy = 0
 
     self.open_x = self.owner.x
     self.open_y = self.owner.y
@@ -184,13 +190,50 @@ function PlatformEntity:getRideables()
     return rideables
 end
 
+function PlatformEntity:getSlopeSampleX(ground, x, y)
+    local left, _, _, _, right = self:getWorldBoundsAt(x or self.owner.x, y or self.owner.y)
+    local x1 = ground.x1 or ground.slope_x1 or ground.x
+    local x2 = ground.x2 or ground.slope_x2 or (ground.x + ground.width)
+    local min_x, max_x = math.min(x1, x2), math.max(x1, x2)
+
+    if (ground.plattype or ground.slope_type or 0) == 1 then
+        local origin_x = x or self.owner.x
+        if origin_x >= min_x and origin_x <= max_x then
+            return origin_x
+        end
+        return nil
+    end
+
+    if ground.slope_anchor == "left" then
+        return left >= min_x and left <= max_x and left or nil
+    elseif ground.slope_anchor == "center" then
+        local center = (left + right) / 2
+        return center >= min_x and center <= max_x and center or nil
+    elseif ground.slope_anchor == "right" then
+        return right >= min_x and right <= max_x and right or nil
+    end
+
+    if (ground.image_xscale or ground.scale_x or 1) >= 0 then
+        if right >= min_x and right <= max_x then
+            return right
+        elseif left >= min_x and left <= max_x then
+            return left
+        end
+    else
+        if left >= min_x and left <= max_x then
+            return left
+        elseif right >= min_x and right <= max_x then
+            return right
+        end
+    end
+end
+
 function PlatformEntity:getGroundTopAt(ground, x, y)
     if not ground then
         return
     end
 
     if ground.is_slope or ground.platform_slope then
-        local left, _, _, _, right = self:getWorldBoundsAt(x or self.owner.x, y or self.owner.y)
         local x1 = ground.x1 or ground.slope_x1 or ground.x
         local y1 = ground.y1 or ground.slope_y1 or ground.y
         local x2 = ground.x2 or ground.slope_x2 or (ground.x + ground.width)
@@ -199,20 +242,10 @@ function PlatformEntity:getGroundTopAt(ground, x, y)
             return math.min(y1, y2)
         end
 
-        local floor_x = right
-        if (ground.image_xscale or ground.scale_x or 1) < 0 then
-            floor_x = left
+        local floor_x = self:getSlopeSampleX(ground, x, y)
+        if not floor_x then
+            return
         end
-        if ground.slope_anchor == "left" then
-            floor_x = left
-        elseif ground.slope_anchor == "center" then
-            floor_x = (left + right) / 2
-        elseif ground.slope_anchor == "right" then
-            floor_x = right
-        end
-
-        local min_x, max_x = math.min(x1, x2), math.max(x1, x2)
-        floor_x = MathUtils.clamp(floor_x, min_x, max_x)
 
         if (ground.plattype or ground.slope_type or 0) == 1 then
             local span = math.max(math.abs(x1 - x2), 0.001)
@@ -245,9 +278,9 @@ function PlatformEntity:overlapsRect(event, x, y)
     return self:collidesWithEvent(event, x, y)
 end
 
-function PlatformEntity:findBlockAt(x, y)
+function PlatformEntity:findBlockAt(x, y, ignored)
     for _, block in ipairs(self:getBlocks()) do
-        if not (block.is_barrier and self.ignore_barriers) and self:overlapsRect(block, x, y) then
+        if block ~= ignored and not (block.is_barrier and self.ignore_barriers) and self:overlapsRect(block, x, y) then
             return block
         end
     end
@@ -276,8 +309,14 @@ function PlatformEntity:findGroundAt(x, y, extra)
     local best_y = math.huge
     for _, floor in ipairs(self:getFloors()) do
         local floor_top = self:getGroundTopAt(floor, x, y)
-        if floor_top and self:collidesWithEvent(floor, x, y, 0, height - 1, width, extra + 2) then
-            if self:isAboveGround(floor, x, y, extra) and floor_top < best_y then
+        local slope = floor.is_slope or floor.platform_slope
+        local check_extra = extra
+        if slope then
+            check_extra = math.max(check_extra, math.ceil(math.abs(self.hspeed or 0) + math.abs(self.vspeed or 0) + 6))
+        end
+        local collides = slope or self:collidesWithEvent(floor, x, y, 0, height - 1, width, extra + 2)
+        if floor_top and collides then
+            if self:isAboveGround(floor, x, y, check_extra) and floor_top < best_y then
                 best = floor
                 best_y = floor_top
             end
@@ -435,6 +474,45 @@ function PlatformEntity:landOn(ground)
     self:snapToGround(ground)
 end
 
+function PlatformEntity:preCarryMovingGroundX(ground)
+    self.precarried_ground = nil
+    self.precarried_dx = 0
+    self.precarried_dy = 0
+
+    if not (ground and (ground.moving_platform or ground.rideable)) then
+        return
+    end
+
+    local dx = ground.dif_x or 0
+    if dx == 0 then
+        return
+    end
+
+    local start_x = self.owner.x
+    local target_x = self.owner.x + dx
+    if not self:findBlockAt(target_x, self.owner.y, ground) then
+        self.owner.x = target_x
+        Object.uncache(self.owner)
+    end
+
+    self.precarried_dx = self.owner.x - start_x
+    if self.precarried_dx ~= 0 then
+        self.precarried_ground = ground
+    end
+end
+
+function PlatformEntity:recordMovingGroundPreCarry(ground, start_x, start_y)
+    if not (ground and (ground.moving_platform or ground.rideable)) then
+        return
+    end
+
+    local dx = self.owner.x - (start_x or self.owner.x)
+    local dy = self.owner.y - (start_y or self.owner.y)
+    self.precarried_dx = dx
+    self.precarried_dy = dy
+    self.precarried_ground = (dx ~= 0 or dy ~= 0) and ground or nil
+end
+
 function PlatformEntity:snapToGround(ground)
     ground = ground or self.ground
     if not ground then
@@ -448,7 +526,10 @@ function PlatformEntity:snapToGround(ground)
     end
 
     self.floorY = ground_y
-    local snap_offset = (ground.is_slope or ground.platform_slope) and 2 or 1
+    local snap_offset = 1
+    if ground.is_slope or ground.platform_slope then
+        snap_offset = ((ground.plattype or ground.slope_type or 0) == 1) and 0 or 2
+    end
     if ground.quicksand and ground.quicksand ~= 0 then
         snap_offset = 1
     end
@@ -495,12 +576,14 @@ function PlatformEntity:applyGroundEffects()
 
     if self.ground.quicksand and self.ground.quicksand ~= 0 then
         self.owner.y = self.owner.y + self.ground.quicksand * DTMULT
+        Object.uncache(self.owner)
     end
 
     if self.ground.conveyor_hspeed and self.ground.conveyor_hspeed ~= 0 then
         local change = self.ground.conveyor_hspeed * DTMULT
         if not self:findBlockAt(self.owner.x + change, self.owner.y) then
             self.owner.x = self.owner.x + change
+            Object.uncache(self.owner)
         end
     end
 end
@@ -509,37 +592,51 @@ function PlatformEntity:applyMovingGround()
     self.last_platform_dx = 0
     self.last_platform_dy = 0
     if not (self.grounded and self.ground and (self.ground.moving_platform or self.ground.rideable)) then
+        self.precarried_ground = nil
+        self.precarried_dx = 0
+        self.precarried_dy = 0
         return
     end
 
-    local dx = self.ground.dif_x or 0
-    local dy = self.ground.dif_y or 0
+    local pre_dx = 0
+    local pre_dy = 0
+    if self.precarried_ground == self.ground then
+        pre_dx = self.precarried_dx or 0
+        pre_dy = self.precarried_dy or 0
+    end
+    self.precarried_ground = nil
+    self.precarried_dx = 0
+    self.precarried_dy = 0
+
+    local dx = (self.ground.dif_x or 0) - pre_dx
+    local dy = (self.ground.dif_y or 0) - pre_dy
     if dx == 0 and dy == 0 then
+        self.last_platform_dx = pre_dx
+        self.last_platform_dy = pre_dy
         return
     end
 
+    local start_x, start_y = self.owner.x, self.owner.y
     local target_x = self.owner.x + dx
     local target_y = self.owner.y + dy
-    if self:findBlockAt(target_x, target_y) then
-        if not self:findBlockAt(target_x, self.owner.y) then
+    if self:findBlockAt(target_x, target_y, self.ground) then
+        if not self:findBlockAt(target_x, self.owner.y, self.ground) then
             self.owner.x = target_x
-            self.last_platform_dx = dx
         end
-        if not self:findBlockAt(self.owner.x, target_y) then
+        if not self:findBlockAt(self.owner.x, target_y, self.ground) then
             self.owner.y = target_y
-            self.last_platform_dy = dy
         end
     else
         self.owner.x = target_x
         self.owner.y = target_y
-        self.last_platform_dx = dx
-        self.last_platform_dy = dy
     end
     Object.uncache(self.owner)
 
     if self.grounded then
         self:snapToGround(self.ground)
     end
+    self.last_platform_dx = pre_dx + (self.owner.x - start_x)
+    self.last_platform_dy = pre_dy + (self.owner.y - start_y)
 end
 
 function PlatformEntity:updateHorizontalInput(input)
@@ -665,10 +762,11 @@ function PlatformEntity:updatePlayer(input)
     self:updateOpenPosition()
     self:updateHorizontalInput(input)
     self:updateJumpInput(input.press_jump or false, input.key_jump or false, input)
-    self:updatePhysics()
+    self:updatePhysics(input)
 end
 
-function PlatformEntity:updatePhysics()
+function PlatformEntity:updatePhysics(options)
+    options = options or {}
     local constants = self.constants
     local previous_ground = self.ground
 
@@ -706,7 +804,9 @@ function PlatformEntity:updatePhysics()
         self.vspeed = math.min(self.vspeed + (constants.gravity or 0.5) * DTMULT, constants.fall_speed or 15)
     end
 
-    self:applyMovingGround()
+    if not options.skip_moving_ground then
+        self:applyMovingGround()
+    end
 end
 
 function PlatformEntity:getDebugLines()

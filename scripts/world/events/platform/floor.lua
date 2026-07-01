@@ -49,11 +49,13 @@ function PlatformFloor:init(data)
     self.dif_x = 0
     self.dif_y = 0
     configureSlope(self, data)
+    Featherfall:setupPlatformMotion(self, self.properties)
     Featherfall:setupFloortexProjection(self, self.properties)
 end
 
 function PlatformFloor:update()
     super.update(self)
+    Featherfall:updatePlatformMotion(self)
     Featherfall:updatePlatformDifference(self)
     Featherfall:syncFloortexSourceVisibility(self)
 end
@@ -61,6 +63,11 @@ end
 function PlatformFloor:draw()
     Featherfall:drawFloortexProjection(self)
     super.draw(self)
+end
+
+function PlatformFloor:drawDebug()
+    super.drawDebug(self)
+    Featherfall:drawPlatformMotionDebug(self)
 end
 
 function PlatformFloor:onRemove(parent)
