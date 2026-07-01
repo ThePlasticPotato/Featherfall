@@ -310,7 +310,12 @@ function PlayerPlatformState:startDashing()
         self.entity.wallcollision = true
         self.entity.hspeed = self.static_dash and 0 or (self.dashsign * 12)
         self.entity.vspeed = 0
-        self.entity.grounded = true
+        local ground = self.entity:findGroundAt(self.player.x, self.player.y, 96)
+        if ground then
+            self.entity:landOn(ground)
+        else
+            self.entity.grounded = true
+        end
         self.entity.jump_time = 0
     end
     self.hspeed = self.static_dash and 0 or (self.dashsign * 12)
@@ -400,7 +405,7 @@ function PlayerPlatformState:updateDashGate(move)
     self:beginDashTransition(gate, direction)
 end
 
-function PlayerPlatformState:updateDashing(move, key_up, key_down)
+function PlayerPlatformState:updateDashing(move)
     self.dashspeed_modified = self.static_dash and 0 or (self.dashspeed * (self.dash_speed_multiplier or 1))
     if self.dashing then
         self.land_anim = false
@@ -411,8 +416,7 @@ function PlayerPlatformState:updateDashing(move, key_up, key_down)
         self.player.sprite.flip_x = self:getPlatformFlipX()
         if self.entity then
             self.entity.hspeed = MathUtils.approach(self.entity.hspeed, (self.dashspeed_modified * self.dashsign), 0.35 * DTMULT)
-            local vinput = (key_down and 1 or 0) - (key_up and 1 or 0)
-            self.entity.vspeed = MathUtils.approach(self.entity.vspeed, vinput * 8, 3 * DTMULT)
+            self.hspeed = self.entity.hspeed
         end
         if Featherfall and Featherfall.nudgePlatformCamera then
             Featherfall:nudgePlatformCamera((self.dashspeed_modified or 0) * self.dashsign * 4, nil, math.abs(self.hspeed or 0) + 0.55)
@@ -779,6 +783,10 @@ function PlayerPlatformState:endTargetMode(select_target)
         self.attack_buffered = false
         if self.entity then
             self.entity.jumpbuffer = 0
+        end
+    elseif select_target and self.entity and self.player:isPlatMovementEnabled() then
+        if (Input.down("cancel") or Input.pressed("cancel")) and self.entity.constants then
+            self.entity.jumpbuffer = self.entity.constants.jumpbuffer or 4
         end
     end
 end
@@ -1876,7 +1884,7 @@ function PlayerPlatformState:onUpdate()
         self.attack_press_timer = MathUtils.approach(self.attack_press_timer, 0, DTMULT)
         return
     end
-    self:updateDashing(move, key_up, key_down)
+    self:updateDashing(move)
     self.entity:updatePlayer({
         move = move,
         key_left = key_left,
@@ -1886,7 +1894,7 @@ function PlayerPlatformState:onUpdate()
         decel = self.dashing and 1 or ((self.dashing_end > 0) and 0.9 or nil),
         hspeed_max = (self.dashing or self.dashing_end > 0) and self.dashspeed_modified or nil,
         hspeed_min = (self.dashing or self.dashing_end > 0) and -self.dashspeed_modified or nil,
-        block_jump = self.attacking or self.jumphovering or self.dashing_end > 0,
+        block_jump = self.attacking or self.jumphovering,
         press_jump = press_jump,
         key_jump = key_jump,
     })
@@ -1917,15 +1925,15 @@ function PlayerPlatformState:onUpdate()
     self:updateAttack()
     self:updateJumpHover(press_jump, key_jump, key_left, key_right, key_up, key_down)
 
-    if self.dashing then
-        self:setPlayerAnimation("run")
-    elseif self.attacking or self.attack_end_visible then
+    if self.attacking or self.attack_end_visible then
         self:applyAttackAnimation()
+    elseif self.jumpsquat_timer > 0 then
+        self:setPlayerAnimation("land")
+    elseif self.dashing and self.on_ground then
+        self:setPlayerAnimation("run")
     elseif not self.on_ground then
         self:setPlayerAnimation(self:getAirAnimationName())
     elseif self.land_anim then
-        self:setPlayerAnimation("land")
-    elseif self.jumpsquat_timer > 0 then
         self:setPlayerAnimation("land")
     elseif self.turn_anim then
         self:setPlayerAnimation("turn")

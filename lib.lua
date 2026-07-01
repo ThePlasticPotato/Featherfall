@@ -2247,6 +2247,9 @@ function Featherfall:enterPlatformMode(source)
     if Game.world.player.state == self.state then
         return true
     end
+    if self:isTransitioning() or self.pending_platform then
+        return false
+    end
 
     self:beginTransition(source, 1)
     Assets.playSound(self.sounds.enter)
