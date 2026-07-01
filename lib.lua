@@ -128,6 +128,7 @@ function Featherfall:init()
         platform_attackable = "platform/attackable",
         platform_slashpusher = "platform/slashpusher",
         platform_bounce_flower = "platform/slashpusher",
+        platform_slashpusher_anchor = "platform/slashpusher_anchor",
         platform_floor = "platform/floor",
         platform_slope = "platform/floor",
         platform_block = "platform/block",
