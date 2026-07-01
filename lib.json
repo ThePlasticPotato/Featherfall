@@ -8,9 +8,8 @@
     "config": {
         "enabled_by_default": true,
         "enabled_flag": "PLATFORMING_ENABLED",
-        "floor_layer_prefix": "floors",
-        "wall_layer_prefix": "walls",
-        "attack_press_mode": 0,
-        "draw_wings": false
+        "floor_layer_prefix": "floors_",
+        "wall_layer_prefix": "walls_",
+        "attack_press_mode": 0
     }
 }

@@ -11,7 +11,6 @@ function Player:init(chara, x, y)
     self.state_manager:addState("FEATHERFALL", self.platform_state)
 end
 
-
 function Player:isPlatforming()
     return self.state_manager and self.state_manager.state == "FEATHERFALL"
 end

@@ -1,6 +1,5 @@
 ---@class PlayerPlatformState : PlatformActorState
 ---@field player Player
-
 local PlatformActorState = libRequire("featherfall", "scripts.world.states.PlatformActorState")
 local PlatformActions = libRequire("featherfall", "scripts.world.states.PlatformActions")
 local PlayerPlatformState, super = Class(PlatformActorState)
