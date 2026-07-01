@@ -244,11 +244,15 @@ end
 function PlatformStatue:onInteract(player, dir)
     local world_player = Game.world and Game.world.player
     if world_player and Featherfall:isEnabled(self) then
+        if not self.can_hit or self.hit_cooldown > 0 or self.timer > 0 then
+            return false
+        end
         if world_player.state == Featherfall.state then
             return false
         end
         if world_player.state ~= Featherfall.state and not Featherfall:shouldRefuseStatueUse(self, player) then
             if Featherfall:enterPlatformMode(self) then
+                self:lockAllStatuesForHit()
                 self.timer = self.timer_max
                 self:beginEnterEffects()
                 return true

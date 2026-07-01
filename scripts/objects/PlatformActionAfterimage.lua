@@ -11,10 +11,18 @@ function PlatformActionAfterimage:init(follower, color, progress, options)
     self.fade_speed = options.fade_speed or 0.1
     self.world_space = options.world_space or false
     self.solid = options.solid or false
+    self.additive = options.additive or false
     self.hspeed = options.hspeed or 0
     self.layer = (follower.layer or 0) - 0.01
 
     if self.world_space then
+        self:setSize(follower.width or self.width, follower.height or self.height)
+        local origin_x, origin_y = follower:getOrigin()
+        if follower.origin_exact then
+            self:setOriginExact(origin_x, origin_y)
+        else
+            self:setOrigin(origin_x, origin_y)
+        end
         self.x = follower.x
         self.y = follower.y
         if self.texture and sprite then
@@ -89,8 +97,18 @@ function PlatformActionAfterimage:applyTransformTo(transform)
 end
 
 function PlatformActionAfterimage:draw()
+    local last_blend_mode
+    local last_blend_alpha_mode
+    if self.additive then
+        last_blend_mode, last_blend_alpha_mode = love.graphics.getBlendMode()
+        love.graphics.setBlendMode("add", last_blend_alpha_mode)
+    end
+
     if self.world_space then
         if not self.snapshot then
+            if self.additive then
+                love.graphics.setBlendMode(last_blend_mode, last_blend_alpha_mode)
+            end
             return
         end
 
@@ -109,16 +127,25 @@ function PlatformActionAfterimage:draw()
         if shader then
             love.graphics.setShader(last_shader)
         end
+        if self.additive then
+            love.graphics.setBlendMode(last_blend_mode, last_blend_alpha_mode)
+        end
         Draw.setColor(1, 1, 1, 1)
         return
     end
 
     if not self.canvas then
+        if self.additive then
+            love.graphics.setBlendMode(last_blend_mode, last_blend_alpha_mode)
+        end
         return
     end
 
     Draw.setColor(1, 1, 1, self.alpha)
     Draw.draw(self.canvas)
+    if self.additive then
+        love.graphics.setBlendMode(last_blend_mode, last_blend_alpha_mode)
+    end
     Draw.setColor(1, 1, 1, 1)
 end
 
