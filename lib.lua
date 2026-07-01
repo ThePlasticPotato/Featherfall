@@ -839,11 +839,22 @@ function Featherfall:getPlatformCameraState(camera)
     return self.platform_camera
 end
 
+function Featherfall:getPlatformCameraTarget(player)
+    if self.transition_timer > 0 and self.transition_prop and self.transition_prop.parent then
+        return self.transition_prop
+    end
+
+    if player and player.state_manager and player.state_manager.state == self.state then
+        return player
+    end
+end
+
 function Featherfall:updatePlatformCamera()
     local world = Game.world
     local camera = world and world.camera
     local player = world and world.player
-    if not (camera and player and player.state_manager and player.state_manager.state == self.state) then
+    local camera_target = self:getPlatformCameraTarget(player)
+    if not (camera and player and camera_target) then
         return
     end
 
@@ -863,8 +874,8 @@ function Featherfall:updatePlatformCamera()
     state.lerptime_h = math.min((state.lerptime_h or lerpmax) + ((state.zone_lerpstrength or 1) * DTMULT), lerpmax)
     state.lerptime_v = math.min((state.lerptime_v or lerpmax) + ((state.zone_lerpstrength or 1) * DTMULT), lerpmax)
 
-    local tx = player.x
-    local ty = player.y
+    local tx = camera_target.x
+    local ty = camera_target.y
     local player_state = player.platform_state
     local entity = player_state and player_state.entity
     local grounded = entity and entity.grounded
@@ -883,35 +894,35 @@ function Featherfall:updatePlatformCamera()
 
     local _, yscale = self:getFloortexTransition()
     if yscale ~= 1 or not state.lerpinit then
-        state.last_ideal_y_real = player.y
+        state.last_ideal_y_real = camera_target.y
         state.lerpinit = true
-        state.last_ideal_y = player.y
+        state.last_ideal_y = camera_target.y
         state.y_stick = 2
         state.y_stick_lerp = 1
     end
     if (state.wants_ideal_y or 0) > 0 then
         if grounded then
-            state.last_ideal_y_real = player.y
+            state.last_ideal_y_real = camera_target.y
             if state.y_stick ~= 2 then
                 state.y_stick_lerp = 0
                 state.y_stick = 2
             end
         elseif state.y_stick == 1 then
-            state.last_ideal_y_real = player.y
+            state.last_ideal_y_real = camera_target.y
         else
             state.y_stick = 0
-            if (state.last_ideal_y or player.y) < (player.y - 20) or (state.last_ideal_y or player.y) > (player.y + 160) then
+            if (state.last_ideal_y or camera_target.y) < (camera_target.y - 20) or (state.last_ideal_y or camera_target.y) > (camera_target.y + 160) then
                 state.y_stick = 1
                 state.y_stick_lerp = 0
-                state.last_ideal_y_real = player.y
+                state.last_ideal_y_real = camera_target.y
             end
             if player_state and player_state.jump_boost then
                 state.y_stick = 1
                 state.y_stick_lerp = 0
-                state.last_ideal_y_real = player.y
+                state.last_ideal_y_real = camera_target.y
             end
         end
-        state.last_ideal_y = MathUtils.lerp(state.last_ideal_y or player.y, state.last_ideal_y_real or player.y, easeInOutQuad(state.y_stick_lerp or 0))
+        state.last_ideal_y = MathUtils.lerp(state.last_ideal_y or camera_target.y, state.last_ideal_y_real or camera_target.y, easeInOutQuad(state.y_stick_lerp or 0))
         state.y_stick_lerp = (state.y_stick_lerp or 0) + (0.07 * DTMULT)
         ty = MathUtils.lerp(ty, state.last_ideal_y, state.wants_ideal_y or 0)
     end
@@ -919,11 +930,11 @@ function Featherfall:updatePlatformCamera()
     state.extra_target_lerp = math.min((state.extra_target_lerp or 1) + (0.05 * DTMULT), 1)
     state.extra_target_markers = state.extra_target_markers or {}
     local active_extra_targets = {}
-    for _, target in ipairs(self:getPlatformCameraEvents("platform_cam_extra_target")) do
-        active_extra_targets[target] = true
-        if not state.extra_target_markers[target] then
-            state.extra_target_markers[target] = {
-                target = target,
+    for _, extra_target in ipairs(self:getPlatformCameraEvents("platform_cam_extra_target")) do
+        active_extra_targets[extra_target] = true
+        if not state.extra_target_markers[extra_target] then
+            state.extra_target_markers[extra_target] = {
+                target = extra_target,
                 lerp = 0,
             }
         end
@@ -942,7 +953,7 @@ function Featherfall:updatePlatformCamera()
 
         if state.extra_target_markers[target] then
             local marker_x, marker_y = self:getPlatformCameraEventCenter(target)
-            local falloff = clamp01(((300 - MathUtils.dist(player.x, player.y, marker_x, marker_y)) + 100) / 300) * 0.75
+            local falloff = clamp01(((300 - MathUtils.dist(camera_target.x, camera_target.y, marker_x, marker_y)) + 100) / 300) * 0.75
             falloff = falloff * (easeInOutSine(marker.lerp or 0) * (state.extra_target_lerp or 1))
             tx = tx + (marker_x * falloff)
             ty = ty + (marker_y * falloff)
@@ -961,7 +972,7 @@ function Featherfall:updatePlatformCamera()
 
     local min_x, min_y = camera:getMinPosition()
     local max_x, max_y = camera:getMaxPosition()
-    local target_x, target_y = player.x, player.y
+    local target_x, target_y = camera_target.x, camera_target.y
     local clamp_zone = self:getPlatformCameraZone("platform_cam_clampzone", target_x, target_y)
     if clamp_zone then
         local half_w = (camera.width / camera.zoom_x) / 2
@@ -1011,15 +1022,15 @@ function Featherfall:updatePlatformCamera()
 
     if state.zone ~= clamp_zone then
         state.zone = clamp_zone
-        if (state.oldgoalx or -999) ~= (goal_x - player.x - (state.nudgex or 0)) and not state.just_started then
+        if (state.oldgoalx or -999) ~= (goal_x - camera_target.x - (state.nudgex or 0)) and not state.just_started then
             state.lerptime_h = 0
         end
-        if (state.oldgoaly or -999) ~= (goal_y - player.y - (state.nudgey or 0)) and not state.just_started then
+        if (state.oldgoaly or -999) ~= (goal_y - camera_target.y - (state.nudgey or 0)) and not state.just_started then
             state.lerptime_v = 0
         end
     end
-    state.oldgoalx = goal_x - player.x - (state.nudgex or 0)
-    state.oldgoaly = goal_y - player.y - (state.nudgey or 0)
+    state.oldgoalx = goal_x - camera_target.x - (state.nudgex or 0)
+    state.oldgoaly = goal_y - camera_target.y - (state.nudgey or 0)
 
     local nudge_zone = self:getPlatformCameraZone("platform_cam_nudgezone", target_x, target_y)
     local nudge_rate = 8
@@ -2003,7 +2014,9 @@ end
 
 function Featherfall:putPlayerInState(source)
     if Game.world and Game.world.player and Game.world.player.state_manager:hasState(self.state) then
-        self:resetPlatformCamera()
+        if not (self.platform_camera and self.transition_prop and self.transition_prop.parent) then
+            self:resetPlatformCamera()
+        end
         Game.world.player:setState(self.state, { source = source })
         if self.transition_prop and self.transition_prop.parent then
             self.transition_prop:setTarget(Game.world.player.x, Game.world.player.y, self.constants.transition_platform_delay, "linear")
