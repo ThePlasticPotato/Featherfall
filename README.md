@@ -50,7 +50,7 @@ Below are the notes I took on the Platforming mechanic in Deltarune, and how it 
 - destroys platform player, platform followers convert
 
 # OTHER WEIRD QUIRKS
-- theres a susie trigger for hittign a floating statue with her axe that i think is unused? i dont remember that at all
+- theres a susie trigger for hitting a floating statue with her axe that i think is unused? i dont remember that at all
 - statues cancel out bascially all platform logic
 - if kris is holding a watering can you cant activate statues (watering cant...)
 - the whole system treats platforming characters as basically entirely separate objects... for kristal id honestly use a state but idk...
