@@ -59,7 +59,7 @@ function PlatformActionUI:init()
     self.description_value = nil
     self.description_text = DialogueText("", 0, 0, SCREEN_WIDTH - 40, 60, {
         style = "none",
-        font = "main",
+        font = "main_mono",
         line_offset = 0,
         wrap = false,
     })
@@ -78,7 +78,7 @@ function PlatformActionUI:getTargetModeDescription(state)
         return
     end
     local description = state.hlit_blocked and "The enemy is guarding against ACTS!" or (state.hlit_desc or "")
-    return target, "* " .. description
+    return target, "[voice:none]* " .. description
 end
 
 function PlatformActionUI:syncTargetModeDescription(state)

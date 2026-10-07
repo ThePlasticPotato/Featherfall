@@ -187,6 +187,9 @@ function PlayerPlatformState:init(player)
     self.hlit_label = "No ACT"
     self.hlit_label_color = {0.5, 0.5, 0.5}
     self.actions = PlatformActions(self)
+	self.jump_input = Game:getFlag("featherInvertedControls", false) and "confirm" or "cancel"
+	self.attack_input = Game:getFlag("featherInvertedControls", false) and "cancel" or "confirm"
+	self.attack_sped_up = false
 end
 
 function PlayerPlatformState:registerEvents()
@@ -414,6 +417,7 @@ function PlayerPlatformState:onPlatformBulletHit(bullet)
     self.hurt_timer = 7
     self.hurt_counter = (self.hurt_counter or 0) + 1
     self.attacking = false
+	self.attack_sped_up = false
     self.jumphovering = false
     self.heart_retreating = false
     self.bullet_knockback = bullet.knockback
@@ -513,6 +517,7 @@ function PlayerPlatformState:beginDashTransition(gate, direction)
     self.static_dash = gate.static_dash or false
     self.spawn_dashlines = gate.spawn_dashlines ~= false
     self.attacking = false
+	self.attack_sped_up = false
     self.dashing = false
     self.dashing_end = 0
     self.land_anim = true
@@ -543,6 +548,7 @@ function PlayerPlatformState:startDashing()
     self.dashing = true
     self.dashing_end = 0
     self.attacking = false
+	self.attack_sped_up = false
     self.land_anim = false
     self.turn_anim = false
     self.runstop_anim = false
@@ -556,7 +562,7 @@ function PlayerPlatformState:startDashing()
             self.entity:landOn(ground)
         else
             self.entity.grounded = true
-            self.jump_boost = false
+			self.jump_boost = false
         end
         self.entity.jump_time = 0
     end
@@ -1007,7 +1013,7 @@ function PlayerPlatformState:beginTargetMode()
     end
 end
 
-function PlayerPlatformState:endTargetMode(select_target)
+function PlayerPlatformState:endTargetMode(select_target, button1)
     local target = self.act_targets[self.targetindex]
     if target then
         target.hovered = false
@@ -1028,7 +1034,20 @@ function PlayerPlatformState:endTargetMode(select_target)
     self:clearTargetModeTargets()
     self:updateTargetModeOutline()
 
-    if select_target and target then
+    local grounded_attack = self.attacking and self.entity and self.entity.grounded
+	if Input.down(self.jump_input) or Input.pressed(self.jump_input) and grounded_attack then
+		if self.entity then
+			self.entity.jumpbuffer = 4
+		end
+	end
+	if Input.down(self.attack_input) or Input.pressed(self.attack_input) then
+        self.attack_buffered = true
+		if self.attacking then -- I think this is a bug in DELTARUNE lol
+			self.attack_sped_up = true
+		end
+		self.attackbuffer = 4
+	end
+    if select_target and target and (not target.button3_non_activated or button1) then
         self:selectActionTarget(target)
         self.attackbuffer = 0
         self.attack_press_timer = 0
@@ -1037,7 +1056,7 @@ function PlayerPlatformState:endTargetMode(select_target)
             self.entity.jumpbuffer = 0
         end
     elseif select_target and self.entity and self.player:isPlatMovementEnabled() then
-        if (Input.down("cancel") or Input.pressed("cancel")) and self.entity.constants then
+        if (Input.down(self.jump_input) or Input.pressed(self.jump_input)) and self.entity.constants then
             self.entity.jumpbuffer = self.entity.constants.jumpbuffer or 4
         end
     end
@@ -1274,11 +1293,11 @@ function PlayerPlatformState:updateTargetMode()
     local menu_down = Input.down("menu")
     self.act_button_held = menu_down
 
-    local in_targetmode = menu_down and Featherfall.transition_timer <= 0 and self.fallen_in_pit == 0
+    local in_targetmode = menu_down and Featherfall.transition_timer <= 0 and self.fallen_in_pit == 0 and not Game.lock_targetmode
     if in_targetmode and not self.targetmode then
         self:beginTargetMode()
     elseif not in_targetmode and self.targetmode then
-        self:endTargetMode(true)
+        self:endTargetMode(true, false)
         return true
     end
 
@@ -1328,7 +1347,7 @@ function PlayerPlatformState:updateTargetMode()
 
     local target = self.act_targets[self.targetindex]
     if Input.pressed("confirm") and target and target.button1_activated then
-        self:endTargetMode(true)
+        self:endTargetMode(true, true)
     end
 
     return true
@@ -1340,11 +1359,13 @@ function PlayerPlatformState:playEntityFeedbackSounds()
     end
 
     local landed = self.entity.grounded and not self.entity.grounded_prev
-    if landed and not self.attacking and (self.time_since_ground or 0) > 2 then
-        self:beginLandAnimation()
-        Assets.playSound(Featherfall.sounds.landing, nil, 1.2)
+    if landed and (self.time_since_ground or 0) > 2 then
         self:spawnDust(-1, Featherfall.assets.effects.landingdust_new)
         self:spawnDust(1, Featherfall.assets.effects.landingdust_new)
+    end
+    if self.entity.grounded ~= self.entity.grounded_prev and self.entity.grounded and not self.attacking and not self.land_anim and (self.time_since_ground or 0) > 2 then
+		self.landingsound = true
+        self:beginLandAnimation()
     end
     if self.entity.launched_jump then
         Assets.playSound(Featherfall.sounds.jump_launch, nil, 1.5)
@@ -1370,6 +1391,7 @@ function PlayerPlatformState:beginPitRespawn()
     self.pit_lerp_start_x = self.player.x
     self.pit_lerp_time = 10 + math.ceil(math.abs(self.player.x - self.checkpoint_x) / 200)
     self.attacking = false
+	self.attack_sped_up = false
     self.attackbuffer = 0
     if self.entity then
         self.entity.hspeed = 0
@@ -1412,7 +1434,10 @@ function PlayerPlatformState:updatePitRespawn()
         Object.uncache(self.player)
         self.pit_leap_time = 5 + math.floor(math.abs(self.checkpoint_y - self.player.y) / 30)
         self.pit_timer = 0
-        Assets.playSound(Featherfall.sounds.pit_wing, 1, 0.3)
+        self.pit_wing_snd = Assets.newSound(Featherfall.sounds.pit_wing, 1, 0.3)
+		self.pit_wing_snd_pitch = 0.3
+		self.pit_wing_snd:play()
+		Game.world.timer:tween((self.pit_leap_time + 10) / 30, self, { pit_wing_snd_pitch = 2.5 }, "linear")
         if self.entity then
             local gravity = Featherfall.constants.gravity or 1.25
             self.entity.hspeed = 0
@@ -1427,6 +1452,7 @@ function PlayerPlatformState:updatePitRespawn()
     end
 
     if self.fallen_in_pit == 3 then
+		self.pit_wing_snd:setPitch(self.pit_wing_snd_pitch or 0.3)
         self.pit_timer = self.pit_timer + DTMULT
         if self.entity then
             self.entity:updatePhysics()
@@ -1439,6 +1465,7 @@ function PlayerPlatformState:updatePitRespawn()
     end
 
     if self.fallen_in_pit == 4 then
+		self.pit_wing_snd:setPitch(self.pit_wing_snd_pitch or 0.3)
         if self.entity then
             self.entity:updatePhysics()
         end
@@ -1470,11 +1497,11 @@ function PlayerPlatformState:startAttack()
 end
 
 function PlayerPlatformState:updateAttackInput()
-    if Input.pressed("confirm") then
+    if Input.pressed(self.attack_input) then
         self.attack_press_timer = 1
     end
     self.press_attack = self.attack_press_timer > 0
-    self.key_attack = Input.down("confirm")
+    self.key_attack = Input.down(self.attack_input)
     self.attackbuffer = math.max(0, self.attackbuffer - DTMULT)
     if self.press_attack then
         self.attackbuffer = 4
@@ -1540,6 +1567,7 @@ function PlayerPlatformState:updateMovementAnimationFlags(key_left, key_right, m
 
     if self.land_anim and (key_left or key_right) then
         self.land_anim = false
+		self.landingsound = false
         self.land_anim_timer = 0
     end
 
@@ -1565,12 +1593,20 @@ function PlayerPlatformState:updateMovementAnimationFlags(key_left, key_right, m
     if not self.land_anim then
         if key_left and not self.turn_anim and self.hspeed > 0.1 then
             self:beginTurnAnimation()
+			self.landingsound = false
         elseif key_right and not self.turn_anim and self.hspeed < -0.1 then
             self:beginTurnAnimation()
+			self.landingsound = false
         elseif move == 0 and not self.runstop_anim and not self.turn_anim and self.current_animation == "run" then
             self:beginRunstopAnimation()
+			self.landingsound = false
         end
     end
+	
+	if self.landingsound then		
+        Assets.playSound(Featherfall.sounds.landing, nil, 1.2)
+	end
+	self.landingsound = false
 end
 
 function PlayerPlatformState:applyAttackAnimation()
@@ -1607,10 +1643,12 @@ function PlayerPlatformState:updateAttack()
     if self.attack_press_mode == 0 and self.attack_canceleable ~= 0 then
         if image_index >= 3.5 and image_index < 5 and not self.key_attack then
             self.attacking = false
+			self.attack_sped_up = false
             return
         end
         if image_index >= 7.5 and image_index < 9 and not self.key_attack then
             self.attacking = false
+			self.attack_sped_up = false
             return
         end
         if self.attack_hitbox >= 3 and self.press_attack then
@@ -1633,6 +1671,7 @@ function PlayerPlatformState:updateAttack()
                 self.attack_press_buffer = self.attack_press_buffer + 1
             elseif image_index >= 6 then
                 self.attacking = false
+				self.attack_sped_up = false
                 return
             end
         elseif self.attack_hitbox == 1 and self.attack_press_buffer == 0 then
@@ -1640,12 +1679,17 @@ function PlayerPlatformState:updateAttack()
                 self.attack_press_buffer = self.attack_press_buffer + 1
             elseif image_index >= 3 then
                 self.attacking = false
+				self.attack_sped_up = false
                 return
             end
         end
     end
 
-    self.attack_frame = self.attack_frame + (0.6 * DTMULT)
+	if self.attack_sped_up then
+		self.attack_frame = self.attack_frame + (1 * DTMULT)
+	else
+		self.attack_frame = self.attack_frame + (0.6 * DTMULT)
+	end
     local frame = math.floor(self.attack_frame)
 
     if frame >= 1 and self.attack_hitbox == 0 then
@@ -1667,6 +1711,7 @@ function PlayerPlatformState:updateAttack()
     if frame >= frame_count then
         self.attacking = false
         self.attack_end_visible = true
+		self.attack_sped_up = false
     end
 end
 
@@ -2099,6 +2144,9 @@ function PlayerPlatformState:onEnter(old_state, settings)
 end
 
 function PlayerPlatformState:onUpdate()
+	self.jump_input = Game:getFlag("featherInvertedControls", false) and "confirm" or "cancel"
+	self.attack_input = Game:getFlag("featherInvertedControls", false) and "cancel" or "confirm"
+
     self:updateTargetModeOutline()
     self:updateHurtTimers()
     if not (Featherfall.transition_prop and Featherfall.transition_prop.parent) then
@@ -2153,8 +2201,8 @@ function PlayerPlatformState:onUpdate()
         key_right = Input.down("right")
         key_up = Input.down("up")
         key_down = Input.down("down")
-        press_jump = Input.pressed("cancel")
-        key_jump = Input.down("cancel")
+        press_jump = Input.pressed(self.jump_input)
+        key_jump = Input.down(self.jump_input)
         press_left = Input.pressed("left")
         press_right = Input.pressed("right")
     end
@@ -2201,9 +2249,10 @@ function PlayerPlatformState:onUpdate()
         press_right = false
         move = 0
         self.attacking = false
+		self.attack_sped_up = false
     end
 
-    if not self.hurt and not self.dashing and self.dashing_end <= 0 then
+    if not self.hurt and not self.dashing and self.dashing_end <= 0 and not Game.lock_movement then
         self:updateAttackInput()
     end
 
@@ -2216,15 +2265,17 @@ function PlayerPlatformState:onUpdate()
             self:spawnDust(-1)
         end
     end
-    if Input.down("cancel") and grounded_attack then
+    if Input.down(self.jump_input) and grounded_attack and not Game.lock_movement then
         if self.entity then
             self.entity.jumpbuffer = 4
         end
         local attack_image = math.floor(self.attack_frame or 0)
         if attack_image >= 5 and self.attack_hitbox == 1 then
             self.attacking = false
+			self.attack_sped_up = false
         elseif attack_image >= 9 and self.attack_hitbox == 2 then
             self.attacking = false
+			self.attack_sped_up = false
         end
     end
     self:updateDashGate(move)
@@ -2250,6 +2301,7 @@ function PlayerPlatformState:onUpdate()
     })
     if self.dashing and self.entity.wallhitspd ~= 0 then
         self.attacking = false
+		self.attack_sped_up = false
         self.dashing = false
         self:stopDashWindLoop()
         self.entity.grounded = false
@@ -2309,7 +2361,7 @@ end
 function PlayerPlatformState:onExit(next_state)
     self:stopDashWindLoop()
     if self.targetmode then
-        self:endTargetMode(false)
+        self:endTargetMode(false, false)
     else
         self:clearTargetModeTargets()
     end

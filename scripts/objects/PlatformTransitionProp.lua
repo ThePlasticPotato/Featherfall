@@ -86,7 +86,9 @@ function PlatformTransitionProp:setPlatformAnimation(name)
     end
 
     self.sprite = Sprite(animation.sprite, offset_x, offset_y)
-    self.sprite.flip_x = self:getPlatformFlipX()
+	-- hacky flip_x offset fixes :sob:
+    self.flip_x = self:getPlatformFlipX()
+    self:setOrigin(self:getPlatformFlipX() and 0 or 0.5, 1)
     self:addChild(self.sprite)
     if animation.manual then
         self.sprite:stop()

@@ -521,7 +521,12 @@ function Featherfall:isTransitioning()
 end
 
 function Featherfall:isPlatformPauseRequested()
-    if Game.world and Game.world.state == "MENU" and Game.world.menu then
+    local player = Game.world and Game.world.player
+    local platformer_active = self.platforming or (player and player.state == self.state) or false
+    if platformer_active and Game.world and Game.world.state == "MENU" and Game.world.menu then
+        return true
+    end
+    if platformer_active and Game.pause_plat_override then
         return true
     end
     if (self.platform_pause_coyote or 0) > 0 then
@@ -1673,7 +1678,7 @@ function Featherfall:getFloortexProjectionRect(object, source_x, source_y, sourc
             local floor_x, floor_y, floor_width, floor_height =
                 self:getFloortexProjectionRect(floor, floor_source_x, floor_source_y, floor_source_width, floor_source_height)
             local dest_height = properties["dest_height"] or object.height or source_height
-            local dest_y = floor_y + floor_height + 1
+            local dest_y = floor_y + floor_height
             if object.platform_floortex_back then
                 dest_y = floor_y - dest_height
             end

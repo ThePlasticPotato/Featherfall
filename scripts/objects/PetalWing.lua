@@ -68,7 +68,7 @@ function PetalWing:getFollowTarget()
     if self.fixate and self.fixate.parent then
         return self.fixate
     end
-    return Game.world and Game.world.player
+    return Featherfall and Featherfall.transition_prop or nil
 end
 
 function PetalWing:getRenderLayer(side)
@@ -91,7 +91,7 @@ end
 function PetalWing:disperse()
     for _, petal in ipairs(self.petals) do
         petal.dispersed = true
-        petal.direction = Utils.angle(self.x, self.y, petal.x or self.x, petal.y or self.y)
+        petal.direction = MathUtils.angle(self.x, self.y, petal.x or self.x, petal.y or self.y)
         petal.speed = 12
         petal.fade_timer = 15
     end
@@ -141,11 +141,11 @@ function PetalWing:update()
     super.update(self)
 
     local target = self:getFollowTarget()
-    if target then
+	if target and not self.dispersing then
         self.x = target.x
         self.y = target.y
         self.layer = target.layer or self.layer
-    end
+	end
     if Featherfall and Featherfall.isPlatformPaused and Featherfall:isPlatformPaused() then
         return
     end
